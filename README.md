@@ -1,19 +1,15 @@
 # Google Forms Automation System
 
-Sistem automasi Google Forms yang canggih dengan support CSV/Excel, cron jobs, dan RabbitMQ untuk reliability.
+Sistem automasi Google Forms yang clean dan streamlined dengan support CSV, ETA scheduling, dan RabbitMQ.
 
 ## 🚀 Features
 
+- ✅ **Single File Solution** - Semua dalam `main.py`
 - ✅ **CSV/Excel Support** - Load data dari file CSV atau Excel
-- ✅ **Multiple Field Types** - Text, multiple choice, checkbox, dropdown, dll
-- ✅ **Cron Jobs & Scheduling** - Schedule berdasarkan ETA per row
+- ✅ **ETA Scheduling** - Schedule berdasarkan waktu WIB per row
 - ✅ **RabbitMQ Queue** - Message queue untuk reliability
-- ✅ **Worker Pool** - Multiple workers untuk concurrent processing
-- ✅ **Retry Mechanism** - Auto retry untuk failed jobs
-- ✅ **Class-based OOP** - Clean, maintainable code
-- ✅ **Dry Run Mode** - Test tanpa submit real
-- ✅ **Priority System** - High, normal, low priority jobs
-- ✅ **Comprehensive Logging** - Detail logging dan statistics
+- ✅ **Timezone Support** - Full WIB (Asia/Jakarta) support
+- ✅ **Clean Configuration** - Semua setting di `config.py`
 
 ## 📦 Installation
 
@@ -21,29 +17,23 @@ Sistem automasi Google Forms yang canggih dengan support CSV/Excel, cron jobs, d
 # Install dependencies
 pip install -r requirements.txt
 
-# Install RabbitMQ (optional)
+# Install RabbitMQ (optional tapi recommended)
 # Ubuntu/Debian:
 sudo apt install rabbitmq-server
 
 # macOS:
 brew install rabbitmq
-
-# Windows: Download dari https://www.rabbitmq.com/install-windows.html
 ```
 
-## 🏗️ Project Structure
+## 🏗️ Project Structure (Clean!)
 
 ```
 📁 testfor/
-├── 📄 main_advanced.py          # Main script dengan CLI
-├── 📄 config.py                 # Konfigurasi global
-├── 📄 google_forms_automation.py # Core automation class
-├── 📄 data_reader.py            # CSV/Excel reader
-├── 📄 scheduler.py              # Cron job scheduler
-├── 📄 rabbitmq_handler.py       # RabbitMQ queue handler
-├── 📄 job_processor.py          # Job processor & worker system
-├── 📄 requirements.txt          # Dependencies
-└── 📄 README.md                 # This file
+├── 📄 main.py           # Main script (all-in-one)
+├── 📄 config.py         # All configurations
+├── 📄 requirements.txt  # Dependencies
+├── 📄 README.md         # This file
+└── 📄 *.csv             # Your data files
 ```
 
 ## 🚀 Quick Start
@@ -53,127 +43,92 @@ brew install rabbitmq
 Edit `config.py`:
 ```python
 FORM_URL = "https://docs.google.com/forms/d/e/YOUR_FORM_ID/viewform"
-
-FORM_DATA = {
-    'entry.625591749': 'Test Value'  # Update dengan entry IDs dari form Anda
-}
 ```
 
 ### 2. Create Sample Data
 
 ```bash
-python main_advanced.py batch --create-sample
+python main.py batch --create-sample
 ```
 
 ### 3. Run Automation
 
 ```bash
-# Batch mode (process semua data langsung)
-python main_advanced.py batch --csv sample_forms_data.csv
+# Batch mode (process semua langsung)
+python main.py batch --csv sample_data.csv
 
 # Scheduled mode (process berdasarkan ETA)
-python main_advanced.py scheduled --csv sample_forms_data.csv
+python main.py scheduled --csv sample_data.csv
 
-# Consumer mode (dari RabbitMQ queue)
-python main_advanced.py consumer
+# Worker mode (dari RabbitMQ queue)
+python main.py worker
 ```
 
-## 📊 CSV File Format
+## 📊 CSV Format
 
 ```csv
-entry.625591749,entry.123456789,eta,priority
-Option 1,Test User 1,2024-08-05 10:00:00,high
-Option 2,Test User 2,2024-08-05 10:05:00,normal
-Option 3,Test User 3,2024-08-05 10:10:00,low
+entry.625591749,eta,priority
+Option 1,2025-08-05 08:00:00,high
+Option 2,2025-08-05 08:15:00,normal
+Option 3,2025-08-05 08:30:00,low
 ```
 
 **Columns:**
-- `entry.XXXXXX` - Entry IDs dari Google Form fields
-- `eta` - Estimated Time of Arrival (YYYY-MM-DD HH:MM:SS) - Optional
-- `priority` - Priority level (high, normal, low) - Optional
+- `entry.XXXXXX` - Entry IDs dari Google Form (required)
+- `eta` - Waktu WIB format: YYYY-MM-DD HH:MM:SS (optional)
+- `priority` - Priority: high, normal, low (optional)
 
 ## 🎯 Usage Modes
 
 ### 1. Batch Mode
-Process semua data langsung tanpa scheduling:
+Process semua data langsung:
 ```bash
-python main_advanced.py batch --csv data.csv --workers 5
+python main.py batch --csv data.csv
 ```
 
 ### 2. Scheduled Mode
-Process berdasarkan ETA column di CSV:
+Process berdasarkan ETA (WIB):
 ```bash
-python main_advanced.py scheduled --csv data.csv
+python main.py scheduled --csv data.csv
 ```
 
-### 3. Consumer Mode
-Wait for jobs dari RabbitMQ queue:
+### 3. Worker Mode
+Process jobs dari RabbitMQ queue:
 ```bash
-python main_advanced.py consumer --rabbitmq-host localhost
-```
-
-### 4. Worker Mode
-Dedicated worker untuk process jobs:
-```bash
-python main_advanced.py worker --workers 3
+python main.py worker
 ```
 
 ## 🛠️ Command Line Options
 
 ```bash
-python main_advanced.py <mode> [options]
+python main.py <mode> [options]
 
 Modes:
   batch         Process all data immediately
-  scheduled     Process based on ETA column
-  consumer      Wait for jobs from RabbitMQ
-  worker        Dedicated worker mode
+  scheduled     Process based on ETA column (WIB)
+  worker        Wait for jobs from RabbitMQ queue
 
 Options:
   --csv FILE           Path to CSV/Excel file
   --create-sample      Create sample CSV file
-  --workers N          Number of worker threads (default: 3)
-  --no-rabbitmq        Disable RabbitMQ (direct execution)
-  --rabbitmq-host HOST RabbitMQ host (default: localhost)
-  --dry-run            Test mode (don't submit forms)
   --verbose            Verbose output
 ```
 
-## 🔧 Configuration
+## 🔧 Configuration (config.py)
 
-### Basic Config (`config.py`)
 ```python
-# Form configuration
+# Form URL
 FORM_URL = "https://docs.google.com/forms/d/e/YOUR_FORM_ID/viewform"
 
-# Form data (akan di-override oleh CSV data)
-FORM_DATA = {
-    'entry.625591749': 'Default Value'
-}
-
-# Request settings
-REQUEST_CONFIG = {
-    'headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    },
-    'timeout': 30,
-    'retries': 3
-}
-
-# Automation settings
+# Timezone (WIB)
 AUTOMATION_CONFIG = {
-    'verbose': True,
-    'dry_run': False,
-    'delay_between_submits': 1,
-    'auto_extract_fields': True
+    'timezone': 'Asia/Jakarta',
+    'eta_format': '%Y-%m-%d %H:%M:%S'
 }
-```
 
-### RabbitMQ Config
-```python
-rabbitmq_config = {
+# RabbitMQ
+RABBITMQ_CONFIG = {
     'host': 'localhost',
-    'port': 5672,
     'username': 'guest',
     'password': 'guest',
     'queue_name': 'google_forms_jobs'
@@ -182,114 +137,92 @@ rabbitmq_config = {
 
 ## 📈 Examples
 
-### Simple Batch Processing
+### Simple Usage
 ```bash
-# Create sample data
-python main_advanced.py batch --create-sample
-
-# Process immediately
-python main_advanced.py batch --csv sample_forms_data.csv
+# Create and run sample data
+python main.py batch --create-sample
+python main.py batch --csv sample_data.csv
 ```
 
-### Scheduled Processing
+### Scheduled with WIB Time
 ```bash
-# Process berdasarkan ETA column
-python main_advanced.py scheduled --csv scheduled_data.csv
+# CSV dengan ETA WIB
+echo "entry.625591749,eta,priority" > my_data.csv
+echo "Test Data,2025-08-05 14:30:00,high" >> my_data.csv
+
+# Run scheduled mode
+python main.py scheduled --csv my_data.csv
 ```
 
-### High Performance Processing
+### Production with RabbitMQ
 ```bash
-# Multiple workers dengan RabbitMQ
-python main_advanced.py worker --workers 10 --rabbitmq-host production-server
-```
+# Terminal 1: Start worker
+python main.py worker
 
-### Testing & Development
-```bash
-# Dry run mode
-python main_advanced.py batch --csv test_data.csv --dry-run --verbose
-
-# Without RabbitMQ
-python main_advanced.py batch --csv data.csv --no-rabbitmq
+# Terminal 2: Schedule jobs
+python main.py scheduled --csv production_data.csv
 ```
 
 ## 🐰 RabbitMQ Setup
 
-### Install RabbitMQ
 ```bash
-# Ubuntu/Debian
-sudo apt update
+# Install dan start RabbitMQ
 sudo apt install rabbitmq-server
-
-# Start service
 sudo systemctl start rabbitmq-server
-sudo systemctl enable rabbitmq-server
 
-# Enable management plugin (optional)
+# Optional: Enable management UI
 sudo rabbitmq-plugins enable rabbitmq_management
+# Access: http://localhost:15672 (guest/guest)
 ```
 
-### Access Management UI
-- URL: http://localhost:15672
-- Username: guest
-- Password: guest
+## 🕐 Timezone Support
 
-## 📊 Monitoring & Statistics
+Sistem menggunakan **WIB (Asia/Jakarta)** timezone:
+- ETA di CSV dianggap sebagai waktu WIB
+- Current time comparison menggunakan WIB
+- Logs menampilkan waktu WIB
 
-Sistem menyediakan real-time statistics:
-- Jobs processed
-- Success/failure rates
-- Processing duration
-- Queue status
-- Worker performance
+**Format ETA:**
+- `2025-08-05 08:00:00` = 8:00 AM WIB
+- `2025-08-05 14:30:00` = 2:30 PM WIB
 
 ## 🔍 Troubleshooting
 
 ### Common Issues
 
-1. **RabbitMQ Connection Failed**
+1. **Entry IDs tidak valid**
+   - Buka form di browser
+   - View source dan cari `entry.XXXXXXX`
+   - Update config.py dan CSV header
+
+2. **RabbitMQ connection failed**
    ```bash
-   # Check RabbitMQ status
    sudo systemctl status rabbitmq-server
-   
-   # Restart RabbitMQ
    sudo systemctl restart rabbitmq-server
    ```
 
-2. **Google Forms Entry IDs Not Found**
-   - Inspect form HTML source
-   - Look for `entry.XXXXXXXXX` patterns
-   - Update `config.py` dengan entry IDs yang benar
+3. **ETA sudah lewat**
+   - Pastikan format: `YYYY-MM-DD HH:MM:SS`
+   - Gunakan tahun 2025 atau tahun yang benar
+   - Waktu dianggap WIB
 
-3. **CSV Format Errors**
-   - Pastikan header row berisi `entry.XXXXXX` columns
-   - Check ETA format: `YYYY-MM-DD HH:MM:SS`
-   - Pastikan no missing values di required columns
+## 📊 System Flow
 
-4. **Form Submission Failed**
-   - Check form URL masih aktif
-   - Verify entry IDs masih valid
-   - Test dengan `--dry-run` mode
-
-### Debug Mode
-```bash
-python main_advanced.py batch --csv data.csv --verbose --dry-run
+```
+📊 CSV File → 🕐 ETA Parser → 📅 Scheduler → 🐰 RabbitMQ → 👷 Worker → 📝 Google Forms
 ```
 
 ## 🤝 Contributing
 
-1. Fork repository
-2. Create feature branch
-3. Add tests untuk new features
-4. Submit pull request
+System ini sudah clean dan streamlined. Untuk modifikasi:
+1. Edit `main.py` untuk logic changes
+2. Edit `config.py` untuk setting changes
+3. Test dengan `--verbose` flag
 
 ## 📝 License
 
-MIT License - Feel free to use dan modify.
+MIT License - Free to use and modify.
 
-## 🆘 Support
+---
 
-Jika ada issues atau questions:
-1. Check troubleshooting section
-2. Run dengan `--verbose` untuk detail logs  
-3. Test dengan `--dry-run` mode
-4. Create issue di GitHub repository
+**Note:** Sistem ini dirancang simple dan powerful. Satu file `main.py` berisi semua yang dibutuhkan untuk automasi Google Forms dengan CSV, ETA, dan RabbitMQ!

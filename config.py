@@ -1,29 +1,12 @@
 """
 Configuration file untuk Google Forms Automation
-Edit file ini untuk mengkonfigurasi form dan data yang akan disubmit
+Semua setting global ada di sini
 """
 
 # ===== FORM CONFIGURATION =====
 FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdQ19RFNrDI5ptQAqMthhS3k_j8sCrl9Sqrp2cxzh5ssrQbhg/viewform"
 
-# ===== FORM DATA =====
-FORM_DATA = {
-    # Text Field
-    'entry.625591749': 'Option 1',
-    
-    # Contoh field lainnya (uncomment sesuai kebutuhan):
-    # 'entry.123456': 'Nama Anda',                    # Text
-    # 'entry.789012': 'email@example.com',            # Email
-    # 'entry.345678': 'Pilihan A',                    # Multiple Choice
-    # 'entry.567890': ['Option 1', 'Option 2'],       # Checkbox
-    # 'entry.111222': 'Jakarta',                      # Dropdown
-    # 'entry.333444': '4',                            # Linear Scale
-    # 'entry.555666': '2024-01-15',                   # Date
-    # 'entry.777888': '14:30',                        # Time
-    # 'entry.999000': '100',                          # Number
-}
-
-# ===== REQUEST SETTINGS =====
+# ===== HTTP REQUEST SETTINGS =====
 REQUEST_CONFIG = {
     'headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -43,4 +26,31 @@ AUTOMATION_CONFIG = {
     'timezone': 'Asia/Jakarta',   # WIB timezone
     'eta_format': '%Y-%m-%d %H:%M:%S',  # Format ETA di CSV
     'show_timezone_info': True    # Show timezone info dalam logs
+}
+
+# ===== RABBITMQ CONFIGURATION =====
+RABBITMQ_CONFIG = {
+    'host': 'localhost',
+    'port': 5672,
+    'username': 'guest',
+    'password': 'guest',
+    'virtual_host': '/',
+    'queue_name': 'google_forms_jobs'
+}
+
+# ===== CSV FORMAT CONFIGURATION =====
+CSV_CONFIG = {
+    'required_columns': ['entry.*'],  # Minimal harus ada kolom entry.*
+    'optional_columns': ['eta', 'priority'],  # Kolom opsional
+    'eta_column': 'eta',
+    'priority_column': 'priority',
+    'default_priority': 'normal'
+}
+
+# ===== WORKER CONFIGURATION =====
+WORKER_CONFIG = {
+    'max_workers': 3,
+    'retry_attempts': 3,
+    'retry_delay': 30,  # seconds
+    'job_timeout': 300  # seconds
 }
