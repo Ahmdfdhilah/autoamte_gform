@@ -183,11 +183,33 @@ class RabbitMQHandler:
             self.connection = pika.BlockingConnection(parameters)
             self.channel = self.connection.channel()
             
-            # Declare queue
-            self.channel.queue_declare(
-                queue=self.config['queue_name'],
-                durable=True
-            )
+            # Declare queue with conflict handling
+            try:
+                # Try to declare queue with our settings
+                self.channel.queue_declare(
+                    queue=self.config['queue_name'],
+                    durable=True
+                )
+                logger.info(f"✅ Queue '{self.config['queue_name']}' created/confirmed")
+            except pika.exceptions.ChannelClosedByBroker as e:
+                # Queue exists with different settings, reconnect and use existing
+                logger.warning(f"Queue exists with different settings, using existing queue")
+                self.connection.close()
+                
+                # Reconnect
+                self.connection = pika.BlockingConnection(parameters)
+                self.channel = self.connection.channel()
+                
+                # Use existing queue (passive=True)
+                try:
+                    result = self.channel.queue_declare(
+                        queue=self.config['queue_name'],
+                        passive=True
+                    )
+                    logger.info(f"✅ Using existing queue '{self.config['queue_name']}' with {result.method.message_count} pending messages")
+                except Exception as passive_error:
+                    logger.error(f"Failed to connect to existing queue: {passive_error}")
+                    raise
             
             logger.info(f"✅ Connected to RabbitMQ: {self.config['host']}")
             return True
@@ -202,7 +224,10 @@ class RabbitMQHandler:
                 if not self.connect():
                     return False
             
-            message = json.dumps(job_data)
+            # Convert datetime objects to strings for JSON serialization
+            serializable_data = self._make_serializable(job_data)
+            message = json.dumps(serializable_data)
+            
             self.channel.basic_publish(
                 exchange='',
                 routing_key=self.config['queue_name'],
@@ -215,6 +240,17 @@ class RabbitMQHandler:
         except Exception as e:
             logger.error(f"Failed to send job: {e}")
             return False
+    
+    def _make_serializable(self, obj):
+        """Convert datetime objects to strings for JSON serialization"""
+        if isinstance(obj, dict):
+            return {k: self._make_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_serializable(item) for item in obj]
+        elif isinstance(obj, datetime):
+            return obj.isoformat()
+        else:
+            return obj
     
     def start_worker(self, callback_func):
         """Start worker to process jobs"""
