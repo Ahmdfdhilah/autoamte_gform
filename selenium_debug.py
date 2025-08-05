@@ -14,6 +14,8 @@ import time
 import logging
 
 from config import FORM_URL
+from src.utils.url_parser import extract_entry_order_from_url, generate_prefilled_url
+import pandas as pd
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -36,19 +38,47 @@ def setup_driver(headless=False):
     return driver
 
 def selenium_form_test():
-    """Test form submission dengan Selenium"""
+    """Test form submission dengan Selenium menggunakan data dari test.xlsx"""
     driver = None
     try:
-        print("🚀 Starting Selenium Debug Test")
+        print("🚀 Starting Selenium Debug Test with test.xlsx data")
         print("=" * 50)
+        
+        # Load data from test.xlsx (first row)
+        print("📊 Loading data from test.xlsx...")
+        df = pd.read_excel('datas.xlsx', header=None)
+        first_row = df.iloc[0].tolist()
+        
+        # Extract entry order from URL
+        entry_order = extract_entry_order_from_url(FORM_URL)
+        print(f"📋 Found {len(entry_order)} entry fields from URL")
+        
+        # Map CSV data to entry fields
+        form_data = {}
+        for i, entry_key in enumerate(entry_order):
+            if i < len(first_row) - 2:  # Skip eta and priority columns
+                value = first_row[i]
+                if pd.notna(value) and str(value).strip():
+                    form_data[entry_key] = str(value)
+        
+        print(f"📊 Mapped CSV data: {len(form_data)} non-empty fields")
+        print("📋 Sample data:")
+        for i, (key, value) in enumerate(list(form_data.items())[:5]):
+            print(f"  {key}: {value}")
+        if len(form_data) > 5:
+            print(f"  ... and {len(form_data) - 5} more fields")
+        
+        # Generate prefilled URL with CSV data
+        prefilled_url = generate_prefilled_url(FORM_URL, entry_order, form_data)
+        print(f"🔗 Generated prefilled URL: {prefilled_url[:150]}...")
         
         # Setup driver (headless=False untuk melihat browser)
         driver = setup_driver(headless=False)
         print("✅ Chrome driver initialized")
         
-        # Load form
-        print(f"📱 Loading form: {FORM_URL[:100]}...")
-        driver.get(FORM_URL)
+        # Load form with prefilled data
+        print("📱 Loading form with prefilled data...")
+        driver.get(prefilled_url)
         print("✅ Form loaded successfully")
         
         # Wait for form to be fully loaded
@@ -76,48 +106,34 @@ def selenium_form_test():
         print(f"  - Textarea fields: {len(textareas)}")
         print(f"  - Select fields: {len(selects)}")
         
-        # Complete test data from prefilled URL
-        test_data = {
-            "entry.574418038": "Ya",
-            "entry.491424067": "Tidak", 
-            "entry.1076213498": "6",
-            "entry.2114887994": "Ya",
-            "entry.540416168": "2",
-            "entry.283916026": "Selenium Test Debug",
-            "entry.1459672174": "081234567890",
-            "entry.812632673": "Teknik Lingkungan",
-            "entry.448756363": "Laki-laki",
-            "entry.1637082189": "Keselarasan dengan nilai dalam diri",
-            "entry.1368563016": "Twitter",
-            "entry.538933348": "Ya",
-            "entry.654411692": "DSA",
-            "entry.1473767745": "Ya", 
-            "entry.138067838": "DSAD",
-            "entry.1766530136": "Ya",
-            "entry.1226795643": "6. ENVIRONMENTAL ADVISOR / PENASIHAT LINGKUNGAN",
-            "entry.934212234": "Memahami prinsip-prinsip Keselamatan dan Kesehatan Kerja (K3)",
-            "entry.418468244": "GHRM sangat penting untuk masa depan",
-            "entry.1578935184": "Green skills sangat mempengaruhi",
-            "entry.366578558": "IPB perlu program lebih baik"
-        }
-        
-        # Navigate through multi-section form
+        # Navigate through multi-section form (data already prefilled)
         section_num = 1
-        total_filled = 0
         max_sections = 20  # Safety limit to prevent infinite loop
         
+        print(f"🔍 Data is prefilled, now navigating through sections...")
+        
         while section_num <= max_sections:
-            print(f"\n📄 Processing Section {section_num}")
+            print(f"\n📄 Navigating Section {section_num}")
             
-            # Find current section's fields and fill them
-            section_filled = 0
+            # Check how many fields are visible in current section
+            current_inputs = driver.find_elements(By.CSS_SELECTOR, "input[name^='entry.']")
+            current_textareas = driver.find_elements(By.CSS_SELECTOR, "textarea[name^='entry.']")
+            current_selects = driver.find_elements(By.CSS_SELECTOR, "select[name^='entry.']")
             
-            for entry_name, value in test_data.items():
-                if fill_field_if_present(driver, entry_name, value):
-                    section_filled += 1
-                    total_filled += 1
+            # Count fields that actually have values
+            filled_count = 0
+            for inp in current_inputs:
+                if inp.get_attribute("value"):
+                    filled_count += 1
+            for ta in current_textareas:
+                if ta.get_attribute("value"):
+                    filled_count += 1
+            for sel in current_selects:
+                if sel.get_attribute("value"):
+                    filled_count += 1
             
-            print(f"  ✅ Filled {section_filled} fields in this section")
+            total_current_fields = len(current_inputs) + len(current_textareas) + len(current_selects)
+            print(f"  📊 Current section: {total_current_fields} fields ({filled_count} filled)")
             
             # Processing current section
             
@@ -182,9 +198,8 @@ def selenium_form_test():
         # Safety check for infinite loop
         if section_num > max_sections:
             print(f"\n⚠️  Reached maximum sections ({max_sections}), stopping to prevent infinite loop")
-            driver.save_screenshot("max_sections_reached.png")
         
-        print(f"\n📝 Total fields filled: {total_filled}")
+        print(f"\n📝 Form navigation completed through {section_num - 1} sections")
         
         # Check submission results
         current_url = driver.current_url
@@ -221,8 +236,7 @@ def selenium_form_test():
         print(f"  ❌ Error indicators: {error_found}")
         
         # Take final screenshot
-        driver.save_screenshot("form_submitted.png")
-        print("📸 Final screenshot saved: form_submitted.png")
+        print("📸 Taking final screenshot...")
         
         if success_found:
             print("\n🎉 Form submitted successfully!")
@@ -238,9 +252,6 @@ def selenium_form_test():
         
     except Exception as e:
         print(f"❌ Selenium test failed: {e}")
-        if driver:
-            driver.save_screenshot("error_screenshot.png")
-            print("📸 Error screenshot saved")
         return False
         
     finally:
@@ -420,7 +431,7 @@ if __name__ == "__main__":
     else:
         print("\n❌ Test completed with issues!")
     
-    print("\n📋 Check the following:")
-    print("1. Screenshots: form_loaded.png, form_filled.png, form_submitted.png")
-    print("2. Google Sheets for new data")
-    print("3. Any error messages in console")
+    print("\n📋 Debug completed:")
+    print("1. Check Google Sheets for new data")
+    print("2. Review console output for any issues")
+    print("3. Browser showed the actual form behavior")

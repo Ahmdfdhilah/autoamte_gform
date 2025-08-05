@@ -51,7 +51,7 @@ def get_clean_form_url(form_url: str) -> str:
 
 
 def generate_prefilled_url(base_form_url: str, entry_order: List[str], form_data: dict) -> str:
-    """Generate prefilled URL with CSV data"""
+    """Generate prefilled URL with CSV data - ALWAYS include ALL entry IDs"""
     try:
         # Get clean base URL
         base_url = base_form_url.split('?')[0]
@@ -60,20 +60,24 @@ def generate_prefilled_url(base_form_url: str, entry_order: List[str], form_data
         params = []
         params.append("usp=pp_url")  # Standard prefilled parameter
         
-        # Add entry data in order
+        # Add ALL entry IDs in order (with empty placeholder if no data)
         for entry_key in entry_order:
-            if entry_key in form_data:
-                value = form_data[entry_key]
-                if value and str(value).strip():  # Only add non-empty values
-                    # URL encode the value
-                    import urllib.parse
-                    encoded_value = urllib.parse.quote_plus(str(value))
-                    params.append(f"{entry_key}={encoded_value}")
+            if entry_key in form_data and form_data[entry_key] and str(form_data[entry_key]).strip():
+                # Has data - URL encode the value
+                import urllib.parse
+                encoded_value = urllib.parse.quote_plus(str(form_data[entry_key]))
+                params.append(f"{entry_key}={encoded_value}")
+            else:
+                # No data or empty - add empty placeholder to maintain structure
+                params.append(f"{entry_key}=")
         
         # Combine base URL with parameters
         prefilled_url = f"{base_url}?{'&'.join(params)}"
         
-        logger.info(f"✅ Generated prefilled URL with {len([p for p in params if 'entry.' in p])} entries")
+        total_entries = len([p for p in params if 'entry.' in p])
+        filled_entries = len([p for p in params if 'entry.' in p and '=' in p and p.split('=')[1]])
+        
+        logger.info(f"✅ Generated prefilled URL with {total_entries} entries ({filled_entries} filled, {total_entries - filled_entries} empty)")
         return prefilled_url
         
     except Exception as e:
