@@ -17,6 +17,7 @@ class GoogleFormsAutomationSystem:
     """Main automation system"""
     
     def __init__(self, form_url: str, request_config: Dict, rabbitmq_config: Dict, timezone: str = 'Asia/Jakarta'):
+        self.form_url = form_url
         self.form_automation = GoogleFormAutomation(form_url, request_config)
         self.rabbitmq_handler = RabbitMQHandler(rabbitmq_config)
         self.scheduler = JobScheduler(self.rabbitmq_handler, timezone)
@@ -67,8 +68,8 @@ class GoogleFormsAutomationSystem:
         """Run in batch mode"""
         logger.info("📦 Running in BATCH mode...")
         
-        # Load CSV
-        reader = CSVDataReader(csv_path)
+        # Load CSV with form URL for entry order
+        reader = CSVDataReader(csv_path, self.form_url)
         if not reader.load_data():
             return
         
@@ -90,8 +91,8 @@ class GoogleFormsAutomationSystem:
         """Run in scheduled mode"""
         logger.info("⏰ Running in SCHEDULED mode...")
         
-        # Load CSV
-        reader = CSVDataReader(csv_path)
+        # Load CSV with form URL for entry order
+        reader = CSVDataReader(csv_path, self.form_url)
         if not reader.load_data():
             return
         
