@@ -14,7 +14,8 @@ import time
 import logging
 
 from config import FORM_URL
-from src.utils.url_parser import extract_entry_order_from_url, generate_prefilled_url
+from src.utils.url_parser import extract_entry_order_from_url
+from src.utils.field_analyzer import analyze_field_types_from_url, generate_prefilled_url_with_types
 import pandas as pd
 
 # Setup logging
@@ -44,8 +45,8 @@ def selenium_form_test():
         print("🚀 Starting Selenium Debug Test with test.xlsx data")
         print("=" * 50)
         
-        # Load data from test.xlsx (first row)
-        print("📊 Loading data from test.xlsx...")
+        # Load data from Excel file (first row)
+        print("📊 Loading data from datas.xlsx...")
         df = pd.read_excel('datas.xlsx', header=None)
         first_row = df.iloc[0].tolist()
         
@@ -53,7 +54,21 @@ def selenium_form_test():
         entry_order = extract_entry_order_from_url(FORM_URL)
         print(f"📋 Found {len(entry_order)} entry fields from URL")
         
-        # Map CSV data to entry fields
+        # Analyze field types from URL
+        print("🔍 Analyzing field types from URL...")
+        field_types = analyze_field_types_from_url(FORM_URL)
+        
+        # Show field type analysis
+        type_counts = {}
+        for info in field_types.values():
+            field_type = info['type']
+            type_counts[field_type] = type_counts.get(field_type, 0) + 1
+        
+        print("📊 Field types found:")
+        for field_type, count in type_counts.items():
+            print(f"  - {field_type}: {count} fields")
+        
+        # Map Excel data to entry fields
         form_data = {}
         for i, entry_key in enumerate(entry_order):
             if i < len(first_row) - 2:  # Skip eta and priority columns
@@ -61,15 +76,18 @@ def selenium_form_test():
                 if pd.notna(value) and str(value).strip():
                     form_data[entry_key] = str(value)
         
-        print(f"📊 Mapped CSV data: {len(form_data)} non-empty fields")
+        print(f"📊 Mapped Excel data: {len(form_data)} non-empty fields")
         print("📋 Sample data:")
         for i, (key, value) in enumerate(list(form_data.items())[:5]):
-            print(f"  {key}: {value}")
+            field_info = field_types.get(key, {})
+            field_type = field_info.get('type', 'unknown')
+            multiple = field_info.get('multiple_values', False)
+            print(f"  {key}: {value} ({field_type}{'|multi' if multiple else ''})")
         if len(form_data) > 5:
             print(f"  ... and {len(form_data) - 5} more fields")
         
-        # Generate prefilled URL with CSV data
-        prefilled_url = generate_prefilled_url(FORM_URL, entry_order, form_data)
+        # Generate prefilled URL with field type awareness
+        prefilled_url = generate_prefilled_url_with_types(FORM_URL, entry_order, form_data, field_types)
         print(f"🔗 Generated prefilled URL: {prefilled_url[:150]}...")
         
         # Setup driver (headless=False untuk melihat browser)

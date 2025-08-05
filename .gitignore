@@ -4,3 +4,5 @@ venv
 claude
 ./node_modules
 node_modules
+~$datas
+~$datas.xlsx
