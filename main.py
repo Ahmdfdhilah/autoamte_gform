@@ -50,9 +50,7 @@ def main():
         AUTOMATION_CONFIG['timezone']
     )
     
-    if not system.initialize():
-        logger.error("System initialization failed")
-        return
+    # Don't initialize here - will be done in each mode with CSV headers
     
     try:
         logger.info("🚀 Google Forms Automation System")

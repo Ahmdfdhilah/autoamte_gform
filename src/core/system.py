@@ -22,11 +22,11 @@ class GoogleFormsAutomationSystem:
         self.scheduler = JobScheduler(self.rabbitmq_handler, timezone)
         self.stats = {'processed': 0, 'succeeded': 0, 'failed': 0}
     
-    def initialize(self) -> bool:
+    def initialize(self, csv_headers: list = None) -> bool:
         """Initialize system"""
         try:
             # Extract form info
-            entries, action_url = self.form_automation.extract_form_info()
+            entries, action_url = self.form_automation.extract_form_info(csv_headers)
             if not entries:
                 logger.error("Failed to extract form information")
                 return False
@@ -72,6 +72,11 @@ class GoogleFormsAutomationSystem:
         if not reader.load_data():
             return
         
+        # Re-initialize with CSV headers
+        if not self.initialize(reader.headers):
+            logger.error("Re-initialization with CSV headers failed")
+            return
+        
         jobs = reader.get_job_list(self.scheduler.timezone.zone)
         logger.info(f"📋 Processing {len(jobs)} jobs")
         
@@ -88,6 +93,11 @@ class GoogleFormsAutomationSystem:
         # Load CSV
         reader = CSVDataReader(csv_path)
         if not reader.load_data():
+            return
+        
+        # Re-initialize with CSV headers
+        if not self.initialize(reader.headers):
+            logger.error("Re-initialization with CSV headers failed")
             return
         
         jobs = reader.get_job_list(self.scheduler.timezone.zone)
