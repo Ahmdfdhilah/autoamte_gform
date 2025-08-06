@@ -22,6 +22,12 @@ class GoogleFormsAutomationSystem:
         self.rabbitmq_handler = RabbitMQHandler(rabbitmq_config)
         self.scheduler = JobScheduler(self.rabbitmq_handler, timezone)
         self.stats = {'processed': 0, 'succeeded': 0, 'failed': 0}
+        self.headless_mode = True  # Default to headless
+    
+    def set_headless_mode(self, headless: bool):
+        """Set headless mode for browser automation"""
+        self.headless_mode = headless
+        self.form_automation.set_headless_mode(headless)
     
     def initialize(self, csv_headers: list = None) -> bool:
         """Initialize system"""

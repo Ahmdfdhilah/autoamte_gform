@@ -12,6 +12,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from ..utils.url_parser import extract_entry_order_from_url, generate_prefilled_url
+from ..utils.field_analyzer import analyze_field_types_from_url, generate_prefilled_url_with_types
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +24,17 @@ class GoogleFormAutomation:
     def __init__(self, form_url: str, request_config: Dict = None):
         self.form_url = form_url
         self.entry_fields = []
+        self.field_types = {}
         self.request_config = request_config or {}
         self.driver = None
+        self.headless_mode = True  # Default to headless
+    
+    def set_headless_mode(self, headless: bool):
+        """Set headless mode for browser automation"""
+        self.headless_mode = headless
     
     def extract_form_info(self, csv_headers: List[str] = None) -> tuple[List[str], Optional[str]]:
-        """Extract entry IDs from CSV headers or URL"""
+        """Extract entry IDs from CSV headers or URL with field type analysis"""
         try:
             # If we have CSV headers, use them directly
             if csv_headers:
@@ -38,11 +46,26 @@ class GoogleFormAutomation:
                 if entry_fields:
                     self.entry_fields = entry_fields
                     logger.info(f"Using CSV headers: {len(entry_fields)} entry fields found")
+                    # Still analyze field types from URL for better handling
+                    try:
+                        self.field_types = analyze_field_types_from_url(self.form_url)
+                        logger.info(f"Analyzed {len(self.field_types)} field types from URL")
+                    except Exception as e:
+                        logger.warning(f"Could not analyze field types: {e}")
+                        self.field_types = {}
                     return self.entry_fields, self.form_url
             
             # Fallback to URL extraction
             entry_fields = extract_entry_order_from_url(self.form_url)
             self.entry_fields = entry_fields
+            
+            # Analyze field types from URL
+            try:
+                self.field_types = analyze_field_types_from_url(self.form_url)
+                logger.info(f"Analyzed {len(self.field_types)} field types from URL")
+            except Exception as e:
+                logger.warning(f"Could not analyze field types: {e}")
+                self.field_types = {}
             
             logger.info(f"Extracted {len(entry_fields)} entry fields from URL")
             return self.entry_fields, self.form_url
@@ -66,7 +89,7 @@ class GoogleFormAutomation:
         return driver
 
     def fill_field_if_present(self, driver, entry_name: str, value: str) -> bool:
-        """Fill field if present in current section"""
+        """Fill field if present in current section with intelligent field matching"""
         try:
             element = driver.find_element(By.NAME, entry_name)
             
@@ -102,12 +125,36 @@ class GoogleFormAutomation:
             elif tag_name == "select":
                 from selenium.webdriver.support.ui import Select
                 select = Select(element)
-                select.select_by_value(value)
-                logger.debug(f"    ✅ Select {entry_name}: {value}")
-                return True
+                # Try to select by value first, then by visible text
+                try:
+                    select.select_by_value(value)
+                    logger.debug(f"    ✅ Select {entry_name}: {value} (by value)")
+                    return True
+                except:
+                    # Try to find option by partial text match
+                    options = select.options
+                    for option in options:
+                        if value.lower() in option.text.lower() or option.text.lower() in value.lower():
+                            select.select_by_visible_text(option.text)
+                            logger.debug(f"    ✅ Select {entry_name}: {option.text} (matched {value})")
+                            return True
                 
         except NoSuchElementException:
-            # Field not in current section, skip silently
+            # Field not in current section, try intelligent fallback
+            # Look for similar field names or try to match with visible selects
+            try:
+                visible_selects = driver.find_elements(By.CSS_SELECTOR, "select")
+                for sel in visible_selects:
+                    options = sel.find_elements(By.TAG_NAME, "option")
+                    for opt in options:
+                        if value.lower() in opt.text.lower() or opt.text.lower() in value.lower():
+                            logger.debug(f"    💡 Found match in unlabeled select: '{opt.text}' for '{value}'")
+                            sel.click()
+                            opt.click()
+                            logger.debug(f"    ✅ Selected: {opt.text}")
+                            return True
+            except Exception as e:
+                logger.debug(f"    ❌ Intelligent fallback failed for {entry_name}: {e}")
             pass
         except Exception as e:
             logger.debug(f"    ❌ Error filling {entry_name}: {e}")
@@ -193,18 +240,49 @@ class GoogleFormAutomation:
         return None
 
     def submit_form(self, form_data: Dict) -> bool:
-        """Submit form using Selenium with multi-section navigation"""
+        """Submit form using Selenium with advanced multi-section navigation and field type awareness"""
         driver = None
         try:
-            logger.info("🔄 Starting Selenium form submission")
+            logger.info("🔄 Starting advanced Selenium form submission")
             logger.info(f"📊 Form data: {len(form_data)} fields to fill")
             
-            # Setup driver (headless by default)
-            driver = self.setup_driver(headless=True)
+            # Clean form data: normalize multiple spaces to single space and strip
+            cleaned_form_data = {}
+            for key, value in form_data.items():
+                if pd.notna(value) and str(value).strip():
+                    cleaned_value = ' '.join(str(value).strip().split())
+                    
+                    # Remove .0 from float numbers (e.g., 9.0 -> 9, but keep 9.5 as 9.5)
+                    try:
+                        # Check if it's a number that ends with .0
+                        if '.' in cleaned_value and cleaned_value.replace('.', '').replace('-', '').isdigit():
+                            float_val = float(cleaned_value)
+                            if float_val.is_integer():
+                                cleaned_value = str(int(float_val))
+                    except ValueError:
+                        # Not a number, keep as is
+                        pass
+                    
+                    cleaned_form_data[key] = cleaned_value
             
-            # Generate prefilled URL with CSV data
+            logger.info(f"📊 Cleaned form data: {len(cleaned_form_data)} non-empty fields")
+            
+            # Setup driver with current headless setting
+            driver = self.setup_driver(headless=self.headless_mode)
+            headless_msg = "headless" if self.headless_mode else "visible browser"
+            logger.info(f"🌐 Chrome driver initialized ({headless_msg})")
+            
+            # Generate prefilled URL with field type awareness
             entry_order = extract_entry_order_from_url(self.form_url)
-            prefilled_url = generate_prefilled_url(self.form_url, entry_order, form_data)
+            if self.field_types:
+                prefilled_url = generate_prefilled_url_with_types(self.form_url, entry_order, cleaned_form_data, self.field_types)
+                logger.info("✅ Using advanced URL generation with field types")
+                logger.info(prefilled_url)
+            else:
+                prefilled_url = generate_prefilled_url(self.form_url, entry_order, cleaned_form_data)
+                logger.info("✅ Using standard URL generation")
+            
+            logger.debug(f"📋 Generated prefilled URL (truncated): {prefilled_url[:150]}...")
             
             driver.get(prefilled_url)
             logger.info(f"✅ Form loaded with prefilled data")
@@ -219,35 +297,90 @@ class GoogleFormAutomation:
                 logger.error("❌ Form is no longer accepting responses")
                 return False
             
-            # Debug: Show what data was prefilled
-            logger.info("📋 Data prefilled in URL:")
-            for entry_name, value in list(form_data.items())[:5]:  # Show first 5 entries
-                logger.info(f"  {entry_name}: {value}")
-            if len(form_data) > 5:
-                logger.info(f"  ... and {len(form_data) - 5} more entries")
+            # Get page title for debugging
+            title = driver.title
+            logger.info(f"📄 Page title: {title}")
             
-            # Navigate through multi-section form (data already prefilled)
+            # Show field type analysis if available
+            if self.field_types:
+                type_counts = {}
+                for info in self.field_types.values():
+                    field_type = info['type']
+                    type_counts[field_type] = type_counts.get(field_type, 0) + 1
+                
+                logger.info("📊 Field types found:")
+                for field_type, count in type_counts.items():
+                    logger.info(f"  - {field_type}: {count} fields")
+            
+            # Navigate through multi-section form with enhanced error handling
             section_num = 1
             max_sections = 20  # Safety limit
             
+            logger.info(f"🔍 Data is prefilled, now navigating through sections...")
+            
             while section_num <= max_sections:
-                logger.info(f"📄 Navigating Section {section_num}")
+                logger.info(f"\n📄 Navigating Section {section_num}")
                 
-                # Since data is prefilled, we just need to navigate
+                # Check how many fields are visible in current section
+                current_inputs = driver.find_elements(By.CSS_SELECTOR, "input[name^='entry.']")
+                current_textareas = driver.find_elements(By.CSS_SELECTOR, "textarea[name^='entry.']")
+                current_selects = driver.find_elements(By.CSS_SELECTOR, "select[name^='entry.']")
+                
+                # Count fields that actually have values
+                filled_count = sum([
+                    len([inp for inp in current_inputs if inp.get_attribute("value")]),
+                    len([ta for ta in current_textareas if ta.get_attribute("value")]),
+                    len([sel for sel in current_selects if sel.get_attribute("value")])
+                ])
+                
+                total_current_fields = len(current_inputs) + len(current_textareas) + len(current_selects)
+                logger.info(f"  📊 Current section: {total_current_fields} fields ({filled_count} filled)")
+                
+                # Check for missing fields that should be here but aren't visible
+                section_entries = ([inp.get_attribute("name") for inp in current_inputs] + 
+                                 [ta.get_attribute("name") for ta in current_textareas] + 
+                                 [sel.get_attribute("name") for sel in current_selects])
+                
+                expected_data_here = {k: v for k, v in cleaned_form_data.items() if k in section_entries}
+                if expected_data_here:
+                    logger.debug(f"  💡 Expected data for this section: {list(expected_data_here.keys())[:5]}...")
+                
+                # Look for missing fields and try manual filling
+                missing_fields = {}
+                for entry_key, value in cleaned_form_data.items():
+                    if entry_key not in section_entries:
+                        base_entry = entry_key.replace('_sentinel', '')
+                        sentinel_exists = any(base_entry + '_sentinel' in name for name in section_entries)
+                        if sentinel_exists:
+                            missing_fields[entry_key] = value
+                
+                if missing_fields:
+                    logger.info(f"  ⚠️  Found {len(missing_fields)} missing fields, attempting manual fill...")
+                    
+                    filled_manually = 0
+                    for entry_key, value in missing_fields.items():
+                        if self.fill_field_if_present(driver, entry_key, value):
+                            filled_manually += 1
+                    
+                    if filled_manually > 0:
+                        logger.info(f"  ✅ Manually filled {filled_manually} additional fields")
                 
                 # Look for next button
                 next_button = self.find_next_button(driver)
                 
                 if next_button:
                     button_text = next_button.text.strip()
+                    logger.info(f"  ➡️  Found 'Berikutnya' button: '{button_text}'")
+                    
                     if 'berikutnya' in button_text.lower():
                         driver.execute_script("arguments[0].scrollIntoView();", next_button)
                         time.sleep(1)
                         driver.execute_script("arguments[0].click();", next_button)
-                        logger.info(f"  ➡️  Clicked Next button (Section {section_num})")
+                        logger.info("  ✅ Clicked Next button")
                         time.sleep(2)
                         section_num += 1
                     else:
+                        logger.info(f"  ⚠️  Button text '{button_text}' is not 'Berikutnya', looking for submit...")
                         break
                 else:
                     # No next button, look for submit
@@ -255,21 +388,35 @@ class GoogleFormAutomation:
                     submit_button = self.find_submit_button(driver)
                     
                     if submit_button:
-                        logger.info(f"📤 Found submit button: '{submit_button.text}'")
+                        logger.info(f"📤 Found submit button: '{submit_button.text}' | Tag: {submit_button.tag_name}")
                         driver.execute_script("arguments[0].scrollIntoView();", submit_button)
                         time.sleep(2)
+                        
+                        logger.info("📤 Submitting form...")
                         driver.execute_script("arguments[0].click();", submit_button)
                         
                         # Wait for submission
+                        logger.info("⏳ Waiting for submission response...")
                         time.sleep(5)
                         break
                     else:
-                        logger.error("❌ No submit button found")
+                        logger.error("❌ No submit button found after all strategies!")
                         return False
+            
+            # Safety check for infinite loop
+            if section_num > max_sections:
+                logger.warning(f"⚠️  Reached maximum sections ({max_sections}), stopping to prevent infinite loop")
+            
+            logger.info(f"📝 Form navigation completed through {section_num - 1} sections")
             
             # Check submission results
             current_url = driver.current_url
+            page_title = driver.title
             page_content = driver.page_source.lower()
+            
+            logger.info(f"📨 After submission:")
+            logger.info(f"  Current URL: {current_url}")
+            logger.info(f"  Page title: {page_title}")
             
             # Check for success indicators
             success_indicators = [
@@ -282,14 +429,30 @@ class GoogleFormAutomation:
             
             success_found = any(indicator in page_content for indicator in success_indicators)
             
-            logger.info(f"📝 Data was prefilled from CSV")
-            logger.info(f"📨 Final URL: {current_url}")
+            # Check for error indicators
+            error_indicators = [
+                "required",
+                "error", 
+                "invalid",
+                "wajib",
+                "gagal"
+            ]
+            
+            error_found = any(indicator in page_content for indicator in error_indicators)
+            
+            logger.info(f"  ✅ Success indicators: {success_found}")
+            logger.info(f"  ❌ Error indicators: {error_found}")
             
             if success_found:
-                logger.info("✅ Form submitted successfully")
+                logger.info("🎉 Form submitted successfully!")
+                logger.info("👀 Check your Google Sheets for the data")
                 return True
+            elif error_found:
+                logger.warning("⚠️  Errors detected in submission")
+                return False
             else:
-                logger.warning("⚠️ Submission status unclear, assuming success")
+                logger.info("❓ Submission status unclear")
+                logger.info("💾 Check Google Sheets manually")
                 return True
                 
         except Exception as e:
@@ -299,3 +462,4 @@ class GoogleFormAutomation:
         finally:
             if driver:
                 driver.quit()
+                logger.debug("🚪 Browser closed")
