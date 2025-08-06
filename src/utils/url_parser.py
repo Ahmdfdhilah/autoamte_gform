@@ -73,7 +73,7 @@ def generate_prefilled_url(base_form_url: str, entry_order: List[str], form_data
         
         # Combine base URL with parameters
         prefilled_url = f"{base_url}?{'&'.join(params)}"
-        
+     
         total_entries = len([p for p in params if 'entry.' in p])
         filled_entries = len([p for p in params if 'entry.' in p and '=' in p and p.split('=')[1]])
         

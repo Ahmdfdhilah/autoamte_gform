@@ -92,22 +92,30 @@ def generate_prefilled_url_with_types(base_form_url: str, entry_order: List[str]
             field_info = field_types.get(entry_key, {'type': 'text', 'multiple_values': False})
             
             if entry_key in form_data and form_data[entry_key] and str(form_data[entry_key]).strip():
-                value = str(form_data[entry_key]).strip()
+                # Clean value: strip whitespace and normalize multiple spaces to single space
+                value = ' '.join(str(form_data[entry_key]).strip().split())
                 
                 # Handle multiple values for checkbox fields
                 if field_info.get('multiple_values', False) and ',' in value:
-                    # Split comma-separated values for checkbox
-                    values = [v.strip() for v in value.split(',') if v.strip()]
+                    # Split comma-separated values for checkbox and clean each value
+                    values = [' '.join(v.strip().split()) for v in value.split(',') if v.strip()]
                     for val in values:
-                        encoded_value = urllib.parse.quote_plus(val)
-                        params.append(f"{entry_key}={encoded_value}")
+                        if val:  # Only process non-empty cleaned values
+                            # First encode, then fix the slash encoding to match Google Forms
+                            encoded_value = urllib.parse.quote_plus(val)
+                            # Replace %2F with / and ensure proper spacing around /
+                            encoded_value = encoded_value.replace('%2F', '/')
+                            params.append(f"{entry_key}={encoded_value}")
                 else:
-                    # Single value
+                    # Single value - encode and fix slash encoding
                     encoded_value = urllib.parse.quote_plus(value)
+                    # Replace %2F with / to match Google Forms format
+                    encoded_value = encoded_value.replace('%2F', '/')
                     params.append(f"{entry_key}={encoded_value}")
             else:
-                # No data or empty - add empty placeholder to maintain structure
-                params.append(f"{entry_key}=")
+                # No data or empty - skip parameter (don't add empty placeholders)
+                # Only add empty parameter if it's a critical field that must be present
+                pass
         
         # Combine base URL with parameters
         prefilled_url = f"{base_url}?{'&'.join(params)}"
