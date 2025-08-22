@@ -95,11 +95,26 @@ class CSVDataReader:
                 num_cols = len(self.df.columns)
                 if num_cols >= 3:  # At least some data + eta + priority
                     entry_cols = num_cols - 2  # Last 2 are eta, priority
-                    # Use first N-2 entries from URL order
-                    headers = self.entry_order[:entry_cols] + ['eta', 'priority']
+                    
+                    # Check if we have enough entry fields from URL
+                    if entry_cols > len(self.entry_order):
+                        logger.warning(f"⚠️ Excel has {entry_cols} data columns but URL only has {len(self.entry_order)} entry fields")
+                        logger.info(f"🔧 Using all {len(self.entry_order)} available entries + eta,priority")
+                        # Use all available entries + fill remaining with generic names + eta, priority
+                        available_entries = self.entry_order
+                        remaining_cols = entry_cols - len(self.entry_order)
+                        generic_entries = [f'extra_col_{i+1}' for i in range(remaining_cols)]
+                        headers = available_entries + generic_entries + ['eta', 'priority']
+                        # Truncate DataFrame to match available entries + eta,priority
+                        self.df = self.df.iloc[:, :(len(self.entry_order) + 2)]
+                        headers = self.entry_order + ['eta', 'priority']
+                    else:
+                        # Use first N-2 entries from URL order
+                        headers = self.entry_order[:entry_cols] + ['eta', 'priority']
+                    
                     self.df.columns = headers
                     self.headers = headers
-                    logger.info(f"✅ Excel file (no headers): {len(self.df)} rows, mapped to {entry_cols} entries + eta,priority")
+                    logger.info(f"✅ Excel file (no headers): {len(self.df)} rows, mapped to {len(headers)-2} entries + eta,priority")
                 else:
                     # Fallback: use all columns as entries
                     headers = self.entry_order[:num_cols]
