@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--create-sample', action='store_true', help='Create sample CSV')
     parser.add_argument('--verbose', action='store_true', help='Verbose logging')
     parser.add_argument('--no-headless', action='store_true', help='Run with browser visible (headless=False)')
+    parser.add_argument('--threads', type=int, default=1, help='Number of concurrent threads (1-5, only works in headless mode)')
     
     args = parser.parse_args()
     
@@ -65,10 +66,29 @@ def main():
         AUTOMATION_CONFIG['timezone']
     )
     
+    # Validate and set threading
+    if args.threads < 1 or args.threads > 5:
+        logger.error("❌ Thread count must be between 1-5")
+        return
+        
     # Set headless mode based on flag
+    headless_mode = True
     if hasattr(args, 'no_headless') and args.no_headless:
+        headless_mode = False
         system.set_headless_mode(False)
         logger.info("🔍 Running with browser visible (headless=False)")
+        
+        # Force single thread for visible browser
+        if args.threads > 1:
+            args.threads = 1
+            logger.warning("⚠️ Multi-threading disabled in visible browser mode (--no-headless)")
+    
+    # Set threading configuration
+    if headless_mode and args.threads > 1:
+        system.set_threading_config(args.threads)
+        logger.info(f"🧵 Multi-threading enabled: {args.threads} concurrent browsers (headless)")
+    else:
+        logger.info("🔄 Single-threaded processing")
     
     # Don't initialize here - will be done in each mode with CSV headers
     
