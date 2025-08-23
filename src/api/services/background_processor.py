@@ -137,8 +137,27 @@ class BackgroundProcessor:
                 
                 job_tracker.update_job_progress(job_id, 35, "Starting form processing...")
                 
-                # Run batch processing
-                system.run_batch_mode(temp_file_path)
+                # Check if file has ETA data by reading jobs first
+                from ...data.csv_reader import CSVDataReader
+                reader = CSVDataReader(temp_file_path, form_url)
+                if not reader.load_data():
+                    raise Exception("Failed to load CSV/Excel data")
+                
+                jobs = reader.get_job_list(system.scheduler.timezone.zone)
+                
+                # Check if any job has ETA for future scheduling
+                has_eta = any(job.get('eta') is not None for job in jobs)
+                
+                if has_eta:
+                    logger.info(f"📅 ETA detected in file, using scheduled mode")
+                    job_tracker.update_job_progress(job_id, 40, "ETA detected, using scheduled mode...")
+                    # Run scheduled processing
+                    system.run_scheduled_mode(temp_file_path)
+                else:
+                    logger.info(f"📦 No ETA detected, using batch mode")
+                    job_tracker.update_job_progress(job_id, 40, "No ETA detected, using batch mode...")
+                    # Run batch processing
+                    system.run_batch_mode(temp_file_path)
                 
                 job_tracker.update_job_progress(job_id, 95, "Processing completed, finalizing...")
                 

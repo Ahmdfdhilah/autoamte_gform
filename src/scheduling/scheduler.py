@@ -45,10 +45,16 @@ class JobScheduler:
                 timer.daemon = True
                 timer.start()
             else:
-                # Send immediately
+                # Job tanpa ETA atau ETA sudah lewat - juga dijadwalkan ke queue
                 if eta:
-                    logger.warning(f"Row {job['row_id']}: ETA {eta.strftime('%Y-%m-%d %H:%M:%S %Z')} sudah lewat, sending immediately")
+                    logger.warning(f"Row {job['row_id']}: ETA {eta.strftime('%Y-%m-%d %H:%M:%S %Z')} sudah lewat, scheduling immediately")
                 else:
-                    logger.info(f"Row {job['row_id']}: No ETA, sending immediately")
+                    logger.info(f"Row {job['row_id']}: No ETA, scheduling immediately")
                 
-                self.rabbitmq_handler.send_job(job)
+                # Schedule immediately (delay = 0) 
+                def schedule_job_now(job_data=job):
+                    self.rabbitmq_handler.send_job(job_data)
+                
+                timer = threading.Timer(0.1, schedule_job_now)  # Small delay to ensure proper queuing
+                timer.daemon = True
+                timer.start()

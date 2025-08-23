@@ -147,6 +147,21 @@ class RabbitMQHandler:
             self.channel.stop_consuming()
             self.consuming = False
     
+    def purge_queue(self) -> bool:
+        """Clear all messages from queue"""
+        try:
+            if not self.connection or self.connection.is_closed:
+                if not self.connect():
+                    return False
+            
+            queue_name = self.config.get('queue_name', 'google_forms_jobs')
+            result = self.channel.queue_purge(queue=queue_name)
+            logger.info(f"🧹 Purged {result.method.message_count} messages from queue '{queue_name}'")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to purge queue: {e}")
+            return False
+    
     def disconnect(self):
         """Disconnect from RabbitMQ"""
         if self.connection and not self.connection.is_closed:

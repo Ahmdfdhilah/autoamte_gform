@@ -208,6 +208,7 @@ class CSVDataReader:
                                 naive_dt = datetime.strptime(eta_str, fmt)
                                 eta_dt = timezone.localize(naive_dt)
                                 job['eta'] = eta_dt
+                                logger.info(f"Row {job['row_id']}: Parsed ETA: {eta_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}")
                                 break
                             except ValueError:
                                 continue

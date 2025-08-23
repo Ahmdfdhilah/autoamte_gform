@@ -166,10 +166,19 @@ class GoogleFormsAutomationSystem:
         jobs = reader.get_job_list(self.scheduler.timezone.zone)
         logger.info(f"📋 Scheduling {len(jobs)} jobs")
         
-        # Schedule jobs
+        # Clear any existing jobs from queue first
+        logger.info("🧹 Clearing existing jobs from queue...")
+        self.rabbitmq_handler.purge_queue()
+        
+        # Schedule all jobs first
         self.scheduler.schedule_jobs(jobs)
         
-        # Start worker
+        # Give time for all jobs to be scheduled properly
+        import time
+        logger.info("⏳ Waiting for all jobs to be scheduled...")
+        time.sleep(1)  # Allow all immediate jobs (0.1s delay) to reach queue
+        
+        # Start worker after all scheduling is complete
         logger.info("🔄 Starting worker to process scheduled jobs...")
         self.rabbitmq_handler.start_worker(self.process_job)
     
