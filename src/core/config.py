@@ -23,6 +23,19 @@ REQUEST_CONFIG = {
     'retries': 3
 }
 
+# ===== AUTOMATION SETTINGS =====
+AUTOMATION_CONFIG = {
+    'verbose': True,          # Show detailed output
+    'dry_run': False,        # Set True untuk test tanpa submit
+    'delay_between_submits': 1,  # seconds (jika submit multiple)
+    'auto_extract_fields': True,  # Otomatis extract field IDs dari form
+    
+    # ===== TIMEZONE SETTINGS =====
+    'timezone': 'Asia/Jakarta',   # WIB timezone
+    'eta_format': '%Y-%m-%d %H:%M:%S',  # Format ETA di CSV
+    'show_timezone_info': True    # Show timezone info dalam logs
+}
+
 # ===== RABBITMQ CONFIGURATION =====
 RABBITMQ_CONFIG = {
     'host': 'localhost',

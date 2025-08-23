@@ -192,21 +192,30 @@ class CSVDataReader:
             # Handle ETA
             if eta_value is not None:
                 try:
-                    eta_str = str(eta_value)
-                    # Try different datetime formats
-                    for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d/%m/%Y %H:%M:%S', '%d/%m/%Y']:
-                        try:
-                            naive_dt = datetime.strptime(eta_str, fmt)
-                            eta_dt = timezone.localize(naive_dt)
-                            job['eta'] = eta_dt
-                            break
-                        except ValueError:
-                            continue
+                    eta_str = str(eta_value).strip()
                     
-                    if job['eta'] is None:
-                        logger.warning(f"Row {job['row_id']}: Could not parse ETA format: {eta_str}")
+                    # Skip numeric-only values that aren't timestamps
+                    if eta_str.isdigit() and len(eta_str) < 8:
+                        logger.debug(f"Row {job['row_id']}: Skipping numeric ETA value: {eta_str}")
+                        job['eta'] = None
+                    elif eta_str.lower() in ['', 'nan', 'none', 'null']:
+                        # Skip empty/null values
+                        job['eta'] = None
+                    else:
+                        # Try different datetime formats
+                        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d/%m/%Y %H:%M:%S', '%d/%m/%Y', '%Y-%m-%d %H:%M', '%d-%m-%Y %H:%M:%S', '%d-%m-%Y']:
+                            try:
+                                naive_dt = datetime.strptime(eta_str, fmt)
+                                eta_dt = timezone.localize(naive_dt)
+                                job['eta'] = eta_dt
+                                break
+                            except ValueError:
+                                continue
+                        
+                        if job['eta'] is None:
+                            logger.debug(f"Row {job['row_id']}: Could not parse ETA format: '{eta_str}' - using immediate execution")
                 except Exception as e:
-                    logger.warning(f"Row {job['row_id']}: ETA processing error: {e}")
+                    logger.debug(f"Row {job['row_id']}: ETA processing error: {e}")
             
             jobs.append(job)
             

@@ -90,6 +90,13 @@ class BackgroundProcessor:
                     AUTOMATION_CONFIG['timezone']
                 )
                 
+                # Apply automation config settings
+                if AUTOMATION_CONFIG.get('dry_run', False):
+                    logger.info(f"🔧 Dry run mode enabled - no actual form submissions")
+                
+                if AUTOMATION_CONFIG.get('delay_between_submits', 0) > 0:
+                    logger.info(f"⏱️ Delay between submits: {AUTOMATION_CONFIG['delay_between_submits']}s")
+                
                 # Configure system
                 system.set_headless_mode(headless)
                 

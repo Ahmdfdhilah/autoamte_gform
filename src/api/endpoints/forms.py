@@ -463,3 +463,38 @@ async def cancel_job(job_id: str):
             status_code=500,
             detail=f"Failed to cancel job: {str(e)}"
         )
+
+@router.get("/config")
+async def get_automation_config():
+    """
+    Get current automation configuration
+    
+    Returns:
+        Current AUTOMATION_CONFIG settings
+    """
+    try:
+        return {
+            "success": True,
+            "config": {
+                "timezone": AUTOMATION_CONFIG.get('timezone', 'Asia/Jakarta'),
+                "eta_format": AUTOMATION_CONFIG.get('eta_format', '%Y-%m-%d %H:%M:%S'),
+                "dry_run": AUTOMATION_CONFIG.get('dry_run', False),
+                "delay_between_submits": AUTOMATION_CONFIG.get('delay_between_submits', 1),
+                "auto_extract_fields": AUTOMATION_CONFIG.get('auto_extract_fields', True),
+                "show_timezone_info": AUTOMATION_CONFIG.get('show_timezone_info', True)
+            },
+            "eta_format_examples": [
+                "2025-08-23 15:30:00",
+                "2025-08-23",
+                "23/08/2025 15:30:00",
+                "23/08/2025",
+                "23-08-2025 15:30:00"
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting config: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get config: {str(e)}"
+        )
