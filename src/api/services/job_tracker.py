@@ -36,6 +36,8 @@ class JobInfo:
         self.result: Optional[Dict[str, Any]] = None
         self.error: Optional[str] = None
         self.logs = []
+        self.cancel_requested = False  # Flag untuk cancel request
+        self.thread_ref: Optional[threading.Thread] = None  # Reference ke thread
 
     def update_progress(self, progress: int, message: str = ""):
         """Update job progress"""
@@ -68,6 +70,18 @@ class JobInfo:
         self.error = error
         self.message = f"Job failed: {error}"
         logger.error(f"Job {self.job_id} failed: {error}")
+    
+    def cancel(self):
+        """Request job cancellation"""
+        self.cancel_requested = True
+        self.status = JobStatus.CANCELLED
+        self.completed_at = datetime.now()
+        self.message = "Job cancelled by user"
+        logger.info(f"Job {self.job_id} cancellation requested")
+    
+    def is_cancelled(self) -> bool:
+        """Check if job cancellation is requested"""
+        return self.cancel_requested
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""

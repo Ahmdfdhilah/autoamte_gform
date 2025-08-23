@@ -30,7 +30,21 @@ class BackgroundProcessor:
         def _process():
             temp_file_path = None
             try:
+                job = job_tracker.get_job(job_id)
+                if not job:
+                    logger.error(f"Job {job_id} not found")
+                    return
+                
+                # Store thread reference for cancellation
+                job.thread_ref = threading.current_thread()
+                
                 job_tracker.start_job(job_id)
+                
+                # Check for cancellation before starting
+                if job.is_cancelled():
+                    logger.info(f"Job {job_id} was cancelled before processing")
+                    return
+                
                 job_tracker.update_job_progress(job_id, 5, "Saving uploaded file...")
                 
                 # Save file to temp directory with timestamp
@@ -44,17 +58,27 @@ class BackgroundProcessor:
                 
                 job_tracker.update_job_progress(job_id, 10, "Reading file data...")
                 
-                # Read and validate file
+                # Check for cancellation
+                if job.is_cancelled():
+                    logger.info(f"Job {job_id} cancelled during file reading")
+                    return
+                
+                # Read and validate file (all rows are data, no header)
                 if file_ext.lower() == '.csv':
-                    df = pd.read_csv(temp_file_path)
+                    df = pd.read_csv(temp_file_path, header=None)
                 else:
-                    df = pd.read_excel(temp_file_path)
+                    df = pd.read_excel(temp_file_path, header=None)
                 
                 if df.empty:
                     raise Exception("File kosong atau tidak berisi data")
                 
                 rows_count = len(df)
                 job_tracker.update_job_progress(job_id, 20, f"File loaded: {rows_count} rows")
+                
+                # Check for cancellation
+                if job.is_cancelled():
+                    logger.info(f"Job {job_id} cancelled before initialization")
+                    return
                 
                 # Initialize automation system
                 job_tracker.update_job_progress(job_id, 25, "Initializing automation system...")
@@ -79,6 +103,16 @@ class BackgroundProcessor:
                 original_update_stats = system._update_stats
                 
                 def progress_callback(success: bool, row_id):
+                    # Check for cancellation
+                    if job.is_cancelled():
+                        logger.info(f"Job {job_id} cancelled during processing row {row_id}")
+                        # Try to stop the system gracefully
+                        try:
+                            system.cleanup()
+                        except:
+                            pass
+                        return
+                    
                     # Call original stats update
                     original_update_stats(success, row_id)
                     

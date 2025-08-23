@@ -74,12 +74,12 @@ async def process_google_form_background(
         # Read file content
         file_content = await file.read()
         
-        # Quick validation of file content
+        # Quick validation of file content  
         try:
             if file_ext == '.csv':
-                df = pd.read_csv(pd.io.common.BytesIO(file_content))
+                df = pd.read_csv(pd.io.common.BytesIO(file_content), header=None)
             else:
-                df = pd.read_excel(pd.io.common.BytesIO(file_content))
+                df = pd.read_excel(pd.io.common.BytesIO(file_content), header=None)
             
             if df.empty:
                 raise HTTPException(
@@ -87,6 +87,7 @@ async def process_google_form_background(
                     detail="File kosong atau tidak berisi data"
                 )
             
+            # Count all rows as data (no header row)
             rows_count = len(df)
             
         except Exception as e:
@@ -196,11 +197,11 @@ async def process_google_form_sync(
             temp_file_path = temp_file.name
         
         try:
-            # Validasi data dalam file
+            # Validasi data dalam file (all rows are data, no header)
             if file_ext == '.csv':
-                df = pd.read_csv(temp_file_path)
+                df = pd.read_csv(temp_file_path, header=None)
             else:
-                df = pd.read_excel(temp_file_path)
+                df = pd.read_excel(temp_file_path, header=None)
             
             if df.empty:
                 raise HTTPException(
@@ -437,10 +438,16 @@ async def cancel_job(job_id: str):
             )
         
         if job.status == JobStatus.PROCESSING:
-            # For now, we can't actually stop running threads, 
-            # but we can mark it as cancelled
-            job.status = JobStatus.CANCELLED
-            job.message = "Job cancelled by user"
+            # Request cancellation - this will be checked in the processing loop
+            job.cancel()
+            logger.info(f"🛑 Cancellation requested for job {job_id}")
+        elif job.status == JobStatus.PENDING:
+            # Job hasn't started yet, cancel immediately
+            job.cancel()
+            logger.info(f"🛑 Cancelled pending job {job_id}")
+        else:
+            # Job already completed/failed/cancelled
+            logger.info(f"ℹ️ Job {job_id} is already {job.status}")
         
         return {
             "success": True,
