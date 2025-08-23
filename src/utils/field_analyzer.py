@@ -9,6 +9,21 @@ from collections import Counter
 
 logger = logging.getLogger(__name__)
 
+class FormFieldAnalyzer:
+    """Class untuk menganalisis Google Form fields secara dinamis"""
+    
+    def __init__(self):
+        """Initialize field analyzer"""
+        pass
+    
+    def analyze_field_types_from_url(self, form_url: str) -> Dict[str, Dict]:
+        """Analyze field types from prefilled URL - instance method"""
+        return analyze_field_types_from_url(form_url)
+    
+    def generate_field_types_config(self, form_url: str) -> Dict[str, Dict]:
+        """Generate field types configuration untuk URL tertentu"""
+        return self.analyze_field_types_from_url(form_url)
+
 
 def analyze_field_types_from_url(form_url: str) -> Dict[str, Dict]:
     """Analyze field types from prefilled URL"""

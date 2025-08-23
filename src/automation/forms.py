@@ -46,7 +46,8 @@ class GoogleFormAutomation:
                 if entry_fields:
                     self.entry_fields = entry_fields
                     logger.info(f"Using CSV headers: {len(entry_fields)} entry fields found")
-                    # Still analyze field types from URL for better handling
+                    # Analyze field types from URL for proper field handling
+                    logger.info(f"🔍 Analyzing field types from form URL...")
                     try:
                         self.field_types = analyze_field_types_from_url(self.form_url)
                         logger.info(f"Analyzed {len(self.field_types)} field types from URL")

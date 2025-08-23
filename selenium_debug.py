@@ -15,7 +15,7 @@ import logging
 import threading
 import keyboard
 
-from config import FORM_URL
+from src.core.config import FORM_URL
 from src.utils.url_parser import extract_entry_order_from_url
 from src.utils.field_analyzer import analyze_field_types_from_url, generate_prefilled_url_with_types
 import pandas as pd

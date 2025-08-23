@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Google Forms Automation - CSV + ETA + RabbitMQ
-All-in-one solution for automated Google Forms submission
+Google Forms Automation - Main Entry Point
+Supports both CLI mode and FastAPI server mode
 """
 
 import argparse
 import logging
+import sys
+import os
 
 # Configuration
-from config import FORM_URL, REQUEST_CONFIG, AUTOMATION_CONFIG, RABBITMQ_CONFIG
+from src.core.config import FORM_URL, REQUEST_CONFIG, AUTOMATION_CONFIG, RABBITMQ_CONFIG
 
 # Modular imports
 from src.core.system import GoogleFormsAutomationSystem
@@ -21,15 +23,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def main():
-    """Main function with CLI"""
+def run_cli_mode():
+    """Run in CLI mode (original functionality)"""
     parser = argparse.ArgumentParser(description='Google Forms Automation')
-    parser.add_argument('mode', choices=['batch', 'scheduled', 'worker'], help='Execution mode')
+    parser.add_argument('mode', choices=['batch', 'scheduled', 'worker', 'api'], help='Execution mode')
     parser.add_argument('--file', '--csv', type=str, dest='file', help='Path to data file (CSV or XLSX)')
     parser.add_argument('--create-sample', action='store_true', help='Create sample CSV')
     parser.add_argument('--verbose', action='store_true', help='Verbose logging')
     parser.add_argument('--no-headless', action='store_true', help='Run with browser visible (headless=False)')
     parser.add_argument('--threads', type=int, default=1, help='Number of concurrent threads (1-5, only works in headless mode)')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='API server host (for api mode)')
+    parser.add_argument('--port', type=int, default=8000, help='API server port (for api mode)')
     
     args = parser.parse_args()
     
@@ -40,13 +44,17 @@ def main():
         create_sample_csv()
         return
     
+    # API mode - start FastAPI server
+    if args.mode == 'api':
+        run_api_server(args.host, args.port)
+        return
+    
     if args.mode in ['batch', 'scheduled'] and not args.file:
         logger.error("Data file required for batch and scheduled modes (CSV or XLSX)")
         return
     
     # Validate file extension
     if args.file:
-        import os
         file_ext = os.path.splitext(args.file)[1].lower()
         if file_ext not in ['.csv', '.xlsx', '.xls']:
             logger.error(f"Unsupported file format: {file_ext}. Please use CSV or XLSX files.")
@@ -90,8 +98,6 @@ def main():
     else:
         logger.info("🔄 Single-threaded processing")
     
-    # Don't initialize here - will be done in each mode with CSV headers
-    
     try:
         logger.info("🚀 Google Forms Automation System")
         logger.info(f"📋 Mode: {args.mode}")
@@ -115,6 +121,66 @@ def main():
         logger.error(f"System error: {e}")
     finally:
         system.cleanup()
+
+def run_api_server(host: str = "0.0.0.0", port: int = 8000):
+    """Run FastAPI server"""
+    try:
+        import uvicorn
+        from fastapi import FastAPI
+        from src.api.endpoints.forms import router as forms_router
+        
+        # Create FastAPI app
+        app = FastAPI(
+            title="Google Forms Automation API",
+            description="API untuk otomasi pengisian Google Forms dengan data CSV/Excel",
+            version="1.0.0",
+            docs_url="/docs",
+            redoc_url="/redoc"
+        )
+        
+        # Include routers
+        app.include_router(forms_router)
+        
+        # Root endpoint
+        @app.get("/")
+        async def root():
+            """Root endpoint dengan informasi API"""
+            return {
+                "message": "Google Forms Automation API",
+                "version": "1.0.0",
+                "docs": "/docs",
+                "endpoints": {
+                    "POST /forms/process/": "Process Google Form with CSV/Excel data",
+                    "POST /forms/analyze/": "Analyze Google Form structure", 
+                    "POST /forms/map-fields/": "Map CSV headers to form fields"
+                }
+            }
+        
+        @app.get("/health")
+        async def health_check():
+            """Health check endpoint"""
+            return {"status": "healthy", "service": "Google Forms Automation API"}
+        
+        logger.info("🚀 Starting Google Forms Automation API Server")
+        logger.info(f"📍 Server: http://{host}:{port}")
+        logger.info(f"📚 Docs: http://{host}:{port}/docs")
+        logger.info(f"🔄 ReDoc: http://{host}:{port}/redoc")
+        logger.info("-" * 50)
+        
+        # Start server
+        uvicorn.run(app, host=host, port=port)
+        
+    except ImportError as e:
+        logger.error(f"❌ FastAPI dependencies not installed: {e}")
+        logger.error("💡 Install with: pip install fastapi uvicorn python-multipart")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"❌ Failed to start API server: {e}")
+        sys.exit(1)
+
+def main():
+    """Main entry point"""
+    run_cli_mode()
 
 if __name__ == "__main__":
     main()
