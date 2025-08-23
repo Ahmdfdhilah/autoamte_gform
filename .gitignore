@@ -7,3 +7,20 @@ node_modules
 ~$datas
 ~$datas.xlsx
 ~$test.xlsx
+
+# Temporary files
+temp/
+*.tmp
+*.temp
+*.log
+
+# Cache files  
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+
+~$test1.xlsx

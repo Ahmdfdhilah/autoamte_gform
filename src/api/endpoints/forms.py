@@ -20,8 +20,10 @@ from ..schemas import (
     ProcessingStats
 )
 from ..services import DynamicFormAnalyzer
+from ..services.job_tracker import job_tracker, JobStatus
+from ..services.background_processor import background_processor
 from ...core.system import GoogleFormsAutomationSystem
-from src.core.config import REQUEST_CONFIG, AUTOMATION_CONFIG, RABBITMQ_CONFIG
+from ...core.config import REQUEST_CONFIG, AUTOMATION_CONFIG, RABBITMQ_CONFIG
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/forms", tags=["Google Forms"])
@@ -29,8 +31,114 @@ router = APIRouter(prefix="/forms", tags=["Google Forms"])
 # Initialize form analyzer
 form_analyzer = DynamicFormAnalyzer()
 
-@router.post("/process/", response_model=GoogleFormResponse)
-async def process_google_form(
+@router.post("/process/")
+async def process_google_form_background(
+    form_url: str = Form(..., description="URL Google Form yang akan diproses"),
+    file: UploadFile = File(..., description="File CSV atau Excel yang berisi data"),
+    headless: bool = Form(True, description="Jalankan browser dalam mode headless"),
+    threads: int = Form(1, description="Jumlah thread concurrent (1-5)")
+):
+    """
+    Process Google Form dengan background processing
+    Returns job ID immediately, use /jobs/{job_id} to check status
+    """
+    
+    try:
+        # Validasi file extension
+        filename = file.filename
+        if not filename:
+            raise HTTPException(status_code=400, detail="Filename is required")
+            
+        file_ext = os.path.splitext(filename)[1].lower()
+        
+        if file_ext not in ['.csv', '.xlsx', '.xls']:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Format file tidak didukung: {file_ext}. Gunakan CSV atau XLSX."
+            )
+        
+        # Validasi thread count
+        if threads < 1 or threads > 5:
+            raise HTTPException(
+                status_code=400,
+                detail="Thread count harus antara 1-5"
+            )
+        
+        # Validasi URL format
+        if not form_url.startswith('https://docs.google.com/forms/'):
+            raise HTTPException(
+                status_code=400,
+                detail="URL harus berupa Google Forms URL yang valid"
+            )
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Quick validation of file content
+        try:
+            if file_ext == '.csv':
+                df = pd.read_csv(pd.io.common.BytesIO(file_content))
+            else:
+                df = pd.read_excel(pd.io.common.BytesIO(file_content))
+            
+            if df.empty:
+                raise HTTPException(
+                    status_code=400,
+                    detail="File kosong atau tidak berisi data"
+                )
+            
+            rows_count = len(df)
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file format or content: {str(e)}"
+            )
+        
+        # Create background job
+        job_params = {
+            "form_url": form_url,
+            "filename": filename,
+            "rows_count": rows_count,
+            "headless": headless,
+            "threads": threads
+        }
+        
+        job_id = job_tracker.create_job("google_form_processing", job_params)
+        
+        # Start background processing
+        background_processor.process_form_async(
+            job_id, form_url, file_content, filename, headless, threads
+        )
+        
+        logger.info(f"🚀 Started background job {job_id} for form: {form_url}")
+        
+        return {
+            "success": True,
+            "message": "Job started successfully",
+            "job_id": job_id,
+            "status": "processing",
+            "data": {
+                "form_url": form_url,
+                "filename": filename,
+                "rows_count": rows_count,
+                "headless": headless,
+                "threads": threads
+            },
+            "check_status_url": f"/forms/jobs/{job_id}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error starting background job: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start background job: {str(e)}"
+        )
+
+@router.post("/process-sync/", response_model=GoogleFormResponse) 
+async def process_google_form_sync(
     form_url: str = Form(..., description="URL Google Form yang akan diproses"),
     file: UploadFile = File(..., description="File CSV atau Excel yang berisi data"),
     headless: bool = Form(True, description="Jalankan browser dalam mode headless"),
@@ -248,4 +356,103 @@ async def map_csv_fields(request: FieldMappingRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Field mapping failed: {str(e)}"
+        )
+
+@router.get("/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    """
+    Get job status and progress
+    
+    Args:
+        job_id: Job ID dari response /process/
+    
+    Returns:
+        Job status, progress, dan hasil jika sudah selesai
+    """
+    try:
+        job = job_tracker.get_job(job_id)
+        
+        if not job:
+            raise HTTPException(
+                status_code=404,
+                detail="Job not found"
+            )
+        
+        return {
+            "success": True,
+            "job": job.to_dict()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error getting job status: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get job status: {str(e)}"
+        )
+
+@router.get("/jobs")
+async def list_all_jobs():
+    """
+    List semua jobs
+    
+    Returns:
+        List semua jobs dengan status masing-masing
+    """
+    try:
+        jobs = job_tracker.get_all_jobs()
+        
+        return {
+            "success": True,
+            "total_jobs": len(jobs),
+            "jobs": jobs
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error listing jobs: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list jobs: {str(e)}"
+        )
+
+@router.delete("/jobs/{job_id}")
+async def cancel_job(job_id: str):
+    """
+    Cancel/delete job
+    
+    Args:
+        job_id: Job ID untuk di-cancel
+    
+    Returns:
+        Confirmation message
+    """
+    try:
+        job = job_tracker.get_job(job_id)
+        
+        if not job:
+            raise HTTPException(
+                status_code=404,
+                detail="Job not found"
+            )
+        
+        if job.status == JobStatus.PROCESSING:
+            # For now, we can't actually stop running threads, 
+            # but we can mark it as cancelled
+            job.status = JobStatus.CANCELLED
+            job.message = "Job cancelled by user"
+        
+        return {
+            "success": True,
+            "message": f"Job {job_id} cancelled",
+            "job_status": job.status
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error cancelling job: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to cancel job: {str(e)}"
         )
