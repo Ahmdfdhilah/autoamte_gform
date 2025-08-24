@@ -202,13 +202,29 @@ class CSVDataReader:
                         # Skip empty/null values
                         job['eta'] = None
                     else:
-                        # Try different datetime formats
-                        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d/%m/%Y %H:%M:%S', '%d/%m/%Y', '%Y-%m-%d %H:%M', '%d-%m-%Y %H:%M:%S', '%d-%m-%Y']:
+                        # Try different datetime formats (all will be interpreted as WIB timezone)
+                        formats = [
+                            '%Y-%m-%d %H:%M:%S',    # 2025-08-23 17:40:00
+                            '%Y-%m-%d %H:%M',       # 2025-08-23 17:40
+                            '%Y-%m-%d',             # 2025-08-23
+                            '%d/%m/%Y %H:%M:%S',    # 23/08/2025 17:40:00
+                            '%d/%m/%Y %H:%M',       # 23/08/2025 17:40
+                            '%d/%m/%Y',             # 23/08/2025
+                            '%m/%d/%Y %H:%M:%S',    # 8/23/2025 17:40:00 (American format)
+                            '%m/%d/%Y %H:%M',       # 8/23/2025 17:40 (American format) 
+                            '%m/%d/%Y',             # 8/23/2025 (American format)
+                            '%d-%m-%Y %H:%M:%S',    # 23-08-2025 17:40:00
+                            '%d-%m-%Y %H:%M',       # 23-08-2025 17:40
+                            '%d-%m-%Y'              # 23-08-2025
+                        ]
+                        
+                        for fmt in formats:
                             try:
                                 naive_dt = datetime.strptime(eta_str, fmt)
+                                # Always localize to WIB timezone (Asia/Jakarta)
                                 eta_dt = timezone.localize(naive_dt)
                                 job['eta'] = eta_dt
-                                logger.info(f"Row {job['row_id']}: Parsed ETA: {eta_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                                logger.info(f"Row {job['row_id']}: Parsed ETA as WIB: {eta_dt.strftime('%Y-%m-%d %H:%M:%S %Z')} (format: {fmt})")
                                 break
                             except ValueError:
                                 continue
