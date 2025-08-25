@@ -148,6 +148,33 @@ class RabbitMQHandler:
         except Exception as e:
             logger.error(f"❌ Connection check failed: {e}")
             return self.connect()
+
+    def send_job_threadsafe(self, job_data: Dict):
+        """A thread-safe method to send a job. It creates a new connection."""
+        connection = None
+        try:
+            parameters = self._create_connection_parameters()
+            connection = pika.BlockingConnection(parameters)
+            channel = connection.channel()
+            
+            # Ensure the queue exists
+            channel.queue_declare(queue=self.config.get('queue_name', 'google_forms_jobs'), durable=True)
+            
+            serializable_data = self._make_serializable(job_data)
+            message = json.dumps(serializable_data)
+
+            channel.basic_publish(
+                exchange='',
+                routing_key=self.config.get('queue_name', 'google_forms_jobs'),
+                body=message,
+                properties=pika.BasicProperties(delivery_mode=2)
+            )
+            logger.info(f"📤 Job sent to queue (thread-safe): Row {job_data.get('row_id')}")
+        except Exception as e:
+            logger.error(f"❌ Failed to send job from a thread: {e}")
+        finally:
+            if connection and connection.is_open:
+                connection.close()
     
     def send_job(self, job_data: Dict, max_retries: int = 3) -> bool:
         """Send job to queue with retry logic"""
@@ -201,23 +228,64 @@ class RabbitMQHandler:
         def wrapper(ch, method, properties, body):
             job_id = None
             try:
-                # The callback_func now handles the job processing logic
-                callback_func(ch, method, properties, body)
-                    
-            except Exception as e:
-                job_id = 'unknown' # Set a default if job_id can't be parsed
-                try:
-                    job_data = json.loads(body)
-                    job_id = job_data.get('job_id', 'unknown')
-                except:
-                    pass
+                job_data = json.loads(body)
+                job_id = job_data.get('job_id', 'unknown')
                 
+                logger.info(f"🔄 Processing job {job_id}")
+                success = callback_func(job_data)
+                
+                if success:
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                    logger.info(f"✅ Job {job_id} completed successfully")
+                else:
+                    logger.warning(f"⚠️ Job {job_id} failed, requeuing...")
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                    
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Invalid JSON in message: {e}")
+                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)  # Don't requeue bad JSON
+            except Exception as e:
                 logger.error(f"❌ Worker error processing job {job_id}: {e}")
                 try:
                     # Try to nack the message
                     ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
                 except Exception as nack_error:
                     logger.error(f"❌ Failed to nack message: {nack_error}")
+        
+        # Connection loop with auto-reconnection
+        while True:
+            try:
+                if not self.ensure_connection():
+                    logger.error("❌ Could not establish connection for worker")
+                    time.sleep(5)
+                    continue
+                
+                self.channel.basic_qos(prefetch_count=prefetch_count)
+                self.channel.basic_consume(
+                    queue=self.config.get('queue_name', 'google_forms_jobs'),
+                    on_message_callback=wrapper
+                )
+                
+                logger.info("🔄 Worker started, waiting for jobs...")
+                self.consuming = True
+                
+                try:
+                    self.channel.start_consuming()
+                except KeyboardInterrupt:
+                    logger.info("⏹️ Worker stopped by user")
+                    self.stop_worker()
+                    break
+                except (ConnectionClosed, ChannelClosed, AMQPConnectionError) as e:
+                    logger.warning(f"⚠️ Connection lost during consuming: {e}")
+                    self.consuming = False
+                    logger.info("🔄 Attempting to reconnect in 5 seconds...")
+                    time.sleep(5)
+                    continue
+                    
+            except Exception as e:
+                logger.error(f"❌ Worker error: {e}")
+                time.sleep(5)
+                continue
     
     def stop_worker(self):
         """Stop worker safely"""

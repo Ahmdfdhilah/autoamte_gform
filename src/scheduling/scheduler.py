@@ -37,24 +37,17 @@ class JobScheduler:
                 delay = (eta - now).total_seconds()
                 logger.info(f"Row {job['row_id']}: Scheduled for {eta.strftime('%Y-%m-%d %H:%M:%S %Z')} (in {delay:.0f}s)")
                 
-                def schedule_job(job_data=job):
-                    self.rabbitmq_handler.send_job(job_data)
-                
-                # Schedule using threading timer
-                timer = threading.Timer(delay, schedule_job)
+                # Use the new thread-safe method
+                timer = threading.Timer(delay, self.rabbitmq_handler.send_job_threadsafe, args=[job])
                 timer.daemon = True
                 timer.start()
             else:
-                # Job tanpa ETA atau ETA sudah lewat - juga dijadwalkan ke queue
+                # Job without ETA or ETA has passed - schedule to the queue
                 if eta:
-                    logger.warning(f"Row {job['row_id']}: ETA {eta.strftime('%Y-%m-%d %H:%M:%S %Z')} sudah lewat, scheduling immediately")
+                    logger.warning(f"Row {job['row_id']}: ETA {eta.strftime('%Y-%m-%d %H:%M:%S %Z')} has passed, scheduling immediately")
                 else:
                     logger.info(f"Row {job['row_id']}: No ETA, scheduling immediately")
                 
-                # Schedule immediately (delay = 0) 
-                def schedule_job_now(job_data=job):
-                    self.rabbitmq_handler.send_job(job_data)
-                
-                timer = threading.Timer(0.1, schedule_job_now)  # Small delay to ensure proper queuing
-                timer.daemon = True
-                timer.start()
+                # Schedule immediately using the thread-safe method
+                # We can call this directly in a new thread to avoid blocking
+                threading.Thread(target=self.rabbitmq_handler.send_job_threadsafe, args=[job]).start()
