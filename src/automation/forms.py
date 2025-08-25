@@ -223,11 +223,11 @@ class GoogleFormAutomation:
         chrome_options.add_experimental_option("prefs", prefs)
 
         # Service configuration for better process management
-        service = Service()
+        service = Service(executable_path="/usr/bin/chromedriver")
         service.start_error_message = "Failed to start Chrome service"
 
         try:
-            driver = webdriver.Chrome(service=service, options=chrome_options, executable_path="/usr/bin/chromedriver")
+            driver = webdriver.Chrome(service=service, options=chrome_options)
 
             # Execute script to hide automation indicators
             driver.execute_script(
