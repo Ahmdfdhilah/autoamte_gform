@@ -108,28 +108,25 @@ class GoogleFormAutomation:
 
     def create_unique_temp_dir(self) -> str:
         """Create a unique temporary directory for Chrome user data"""
-        # Use process ID and timestamp for better uniqueness
+        # Use process ID and a unique ID for better collision avoidance
         pid = os.getpid()
-        timestamp = int(time.time() * 1000)  # milliseconds
-        unique_id = f"{pid}_{timestamp}_{str(uuid.uuid4())[:8]}"
+        unique_id = str(uuid.uuid4())
         
-        temp_base = tempfile.gettempdir()
-        user_data_dir = os.path.join(temp_base, f"chrome_user_{unique_id}")
+        # Check for a dedicated temp directory from an environment variable first
+        # This is the best practice for a server environment
+        temp_base = os.getenv('CHROME_TEMP_DIR', tempfile.gettempdir())
         
-        # Ensure the directory doesn't exist (extra safety)
-        counter = 0
-        original_dir = user_data_dir
-        while os.path.exists(user_data_dir):
-            counter += 1
-            user_data_dir = f"{original_dir}_{counter}"
-            if counter > 100:  # Prevent infinite loop
-                raise RuntimeError("Unable to create unique temp directory")
+        user_data_dir = os.path.join(temp_base, f"chrome_user_{pid}_{unique_id}")
         
-        # Create the directory
-        os.makedirs(user_data_dir, exist_ok=False)
-        self.temp_dirs.append(user_data_dir)
-        
-        return user_data_dir
+        try:
+            os.makedirs(user_data_dir, exist_ok=True) # Use exist_ok=True to be safe
+            self.temp_dirs.append(user_data_dir)
+            logger.debug(f"✅ Successfully created unique temp dir: {user_data_dir}")
+            return user_data_dir
+        except Exception as e:
+            logger.error(f"❌ CRITICAL: Failed to create temp directory at {user_data_dir}: {e}")
+            # If we can't create a temp directory, we should not proceed with user-data-dir
+            return None
 
     def setup_driver(self, headless: bool = True) -> webdriver.Chrome:
         """Setup Chrome driver with improved concurrency handling"""
@@ -138,8 +135,12 @@ class GoogleFormAutomation:
         # Create unique user data directory with better collision avoidance
         try:
             user_data_dir = self.create_unique_temp_dir()
-            chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
-            logger.debug(f"📁 Created unique temp dir: {user_data_dir}")
+            if user_data_dir:
+                chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+                logger.debug(f"📁 Using unique temp dir: {user_data_dir}")
+            else:
+                logger.warning("⚠️ Could not create a unique temp directory. Proceeding without --user-data-dir.")
+                # This might still cause issues, but it's better than crashing.
         except Exception as e:
             logger.warning(f"Failed to create temp dir: {e}, proceeding without --user-data-dir")
             # Don't use user-data-dir if we can't create a unique one

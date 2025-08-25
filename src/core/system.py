@@ -6,6 +6,9 @@ import logging
 from typing import Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import queue # Import the queue module
+import threading # Import the threading module
+import json # Import the json module
 
 from ..automation.forms import GoogleFormAutomation
 from ..messaging.rabbitmq import RabbitMQHandler
@@ -27,7 +30,8 @@ class GoogleFormsAutomationSystem:
         self.headless_mode = True  # Default to headless
         self.max_threads = 1  # Default single thread
         self._stats_lock = None  # Will be initialized if threading is used
-    
+        self.job_queue = queue.Queue() # In-memory queue for jobs
+
     def set_headless_mode(self, headless: bool):
         """Set headless mode for browser automation"""
         self.headless_mode = headless
@@ -180,14 +184,44 @@ class GoogleFormsAutomationSystem:
         
         # Start worker after all scheduling is complete
         logger.info("🔄 Starting worker to process scheduled jobs...")
-        self.rabbitmq_handler.start_worker(self.process_job)
-    
+        self.run_worker_mode()
+
+    def _selenium_worker(self):
+        """Worker thread for processing jobs from the in-memory queue."""
+        while True:
+            try:
+                job_data = self.job_queue.get()
+                if job_data is None:  # Sentinel value to stop the thread
+                    break
+                self.process_job(job_data)
+                self.job_queue.task_done()
+            except Exception as e:
+                logger.error(f"Error in Selenium worker thread: {e}")
+
     def run_worker_mode(self):
         """Run in worker mode"""
         logger.info("👷 Running in WORKER mode...")
-        logger.info("Waiting for jobs from queue...")
+
+        # Start Selenium worker threads
+        selenium_workers = []
+        for _ in range(self.max_threads):
+            worker = threading.Thread(target=self._selenium_worker, daemon=True)
+            worker.start()
+            selenium_workers.append(worker)
+        logger.info(f"🚀 Started {self.max_threads} Selenium worker threads.")
+
+        # RabbitMQ callback to add jobs to the in-memory queue
+        def rabbitmq_callback(ch, method, properties, body):
+            try:
+                job_data = json.loads(body)
+                self.job_queue.put(job_data)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+            except Exception as e:
+                logger.error(f"Error processing message from RabbitMQ: {e}")
+                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
         
-        self.rabbitmq_handler.start_worker(self.process_job)
+        logger.info("Waiting for jobs from queue...")
+        self.rabbitmq_handler.start_worker(rabbitmq_callback)
     
     def print_stats(self):
         """Print processing statistics"""
