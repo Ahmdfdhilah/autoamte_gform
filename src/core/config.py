@@ -4,8 +4,9 @@ Semua setting global ada di sini
 """
 
 # ===== FORM CONFIGURATION =====
-FORM_URL = ''#===== JOB MAPPING CONFIGURATION =====
-# Import job mappings for Google Form automation
+FORM_URL = ''
+
+#===== JOB MAPPING CONFIGURATION =====
 try:
     from job_mappings import JOB_MAPPINGS, generate_prefilled_url, get_job_by_id, get_job_by_name
     JOB_MAPPING_ENABLED = True
