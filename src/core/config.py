@@ -9,7 +9,7 @@ import os
 FORM_URL = ''
 
 # ===== API SECURITY CONFIGURATION =====
-API_KEY = os.getenv('FORMS_API_KEY', 'string')  # Default fallback ke 'tanyafadil'
+API_KEY = os.getenv('FORMS_API_KEY', 'tanyafadil')  # Default fallback ke 'tanyafadil'
 
 #===== JOB MAPPING CONFIGURATION =====
 try:

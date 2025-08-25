@@ -40,7 +40,7 @@ def verify_api_key(x_api_key: str = Depends(api_key_header)):
     if x_api_key != API_KEY:
         raise HTTPException(
             status_code=401,
-            detail=f"Invalid API key. Expected: {API_KEY}"
+            detail=f"Invalid API key."
         )
     return x_api_key
 
