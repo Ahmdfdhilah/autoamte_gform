@@ -1,8 +1,9 @@
 """
-Endpoints untuk Google Forms processing dengan API Key protection
+Endpoints untuk Google Forms processing dengan API Key protection dari config
 """
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Depends, Header
+from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
 import tempfile
 import os
@@ -28,14 +29,18 @@ from ...core.config import REQUEST_CONFIG, AUTOMATION_CONFIG, RABBITMQ_CONFIG, A
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/forms", tags=["Google Forms"])
 
-def verify_api_key(x_api_key: Optional[str] = Header(None)):
+# Define API Key security scheme for OpenAPI/Swagger
+api_key_header = APIKeyHeader(name="X-API-Key", description="API Key untuk mengakses protected endpoints")
+
+def verify_api_key(x_api_key: str = Depends(api_key_header)):
     """
     Dependency untuk verifikasi API key pada endpoint yang dilindungi
+    API Key dibaca dari environment variable FORMS_API_KEY atau default 'tanyafadil'
     """
     if x_api_key != API_KEY:
         raise HTTPException(
             status_code=401,
-            detail="Invalid or missing API key. Include 'X-API-Key: tanyafadil' in headers."
+            detail=f"Invalid API key. Expected: {API_KEY}"
         )
     return x_api_key
 
@@ -54,7 +59,7 @@ async def process_google_form_background(
     Process Google Form dengan background processing
     Returns job ID immediately, use /jobs/{job_id} to check status
     
-    **Requires API Key**: Include `X-API-Key: tanyafadil` in headers
+    **Requires API Key**: Include `X-API-Key` in headers with valid key
     """
     
     try:
@@ -163,7 +168,7 @@ async def process_google_form_sync(
     """
     Process Google Form dengan data dari CSV/Excel
     
-    **Requires API Key**: Include `X-API-Key: tanyafadil` in headers
+    **Requires API Key**: Include `X-API-Key` in headers with valid key
     
     Args:
         form_url: URL Google Form yang akan diisi
@@ -298,7 +303,7 @@ async def analyze_form(
     """
     Analisis struktur Google Form
     
-    **Requires API Key**: Include `X-API-Key: tanyafadil` in headers
+    **Requires API Key**: Include `X-API-Key` in headers with valid key
     
     Args:
         request: Form analysis request dengan URL
@@ -345,7 +350,7 @@ async def map_csv_fields(
     """
     Mapping CSV headers dengan form fields
     
-    **Requires API Key**: Include `X-API-Key: tanyafadil` in headers
+    **Requires API Key**: Include `X-API-Key` in headers with valid key
     
     Args:
         request: Field mapping request dengan URL dan CSV headers
@@ -456,7 +461,7 @@ async def cancel_job(
     """
     Cancel/delete job
     
-    **Requires API Key**: Include `X-API-Key: tanyafadil` in headers
+    **Requires API Key**: Include `X-API-Key` in headers with valid key
     
     Args:
         job_id: Job ID untuk di-cancel
