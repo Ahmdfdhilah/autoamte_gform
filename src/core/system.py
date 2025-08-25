@@ -6,9 +6,9 @@ import logging
 from typing import Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
-import queue # Import the queue module
-import threading # Import the threading module
-import json # Import the json module
+import queue
+import threading
+import json
 
 from ..automation.forms import GoogleFormAutomation
 from ..messaging.rabbitmq import RabbitMQHandler
@@ -27,79 +27,67 @@ class GoogleFormsAutomationSystem:
         self.rabbitmq_handler = RabbitMQHandler(rabbitmq_config)
         self.scheduler = JobScheduler(self.rabbitmq_handler, timezone)
         self.stats = {'processed': 0, 'succeeded': 0, 'failed': 0}
-        self.headless_mode = True  # Default to headless
-        self.max_threads = 1  # Default single thread
-        self._stats_lock = None  # Will be initialized if threading is used
-        self.job_queue = queue.Queue() # In-memory queue for jobs
+        self.headless_mode = True
+        self.max_threads = 1
+        self._stats_lock = threading.Lock()
+        self.job_queue = queue.Queue() # Antrian internal untuk pekerjaan
 
     def set_headless_mode(self, headless: bool):
-        """Set headless mode for browser automation"""
         self.headless_mode = headless
         self.form_automation.set_headless_mode(headless)
     
     def set_threading_config(self, max_threads: int):
-        """Set multi-threading configuration"""
-        import threading
         self.max_threads = max_threads
-        self._stats_lock = threading.Lock()  # Thread-safe stats updates
     
     def initialize(self, csv_headers: list = None) -> bool:
-        """Initialize system"""
         try:
-            # Extract form info
             entries, action_url = self.form_automation.extract_form_info(csv_headers)
             if not entries:
                 logger.error("Failed to extract form information")
                 return False
-            
             logger.info(f"✅ Form initialized: {len(entries)} fields detected")
             return True
         except Exception as e:
             logger.error(f"Initialization failed: {e}")
             return False
-    
+
+    def _selenium_worker(self):
+        """Worker thread yang mengambil pekerjaan dari antrian internal dan menjalankan Selenium."""
+        while True:
+            try:
+                job_data = self.job_queue.get()
+                if job_data is None: # Sinyal untuk berhenti
+                    break
+                
+                # Proses pekerjaan
+                self.process_job(job_data)
+                self.job_queue.task_done()
+            except Exception as e:
+                logger.error(f"Error in Selenium worker thread: {e}")
+
     def process_job(self, job_data: Dict) -> bool:
-        """Process single job"""
+        """Process single job. (Ini dipanggil oleh _selenium_worker)"""
         try:
             row_id = job_data.get('row_id')
             form_data = job_data.get('form_data', {})
             
             logger.info(f"🔄 Processing Row {row_id}")
             
-            # Create a new form automation instance for thread safety
-            if self.max_threads > 1:
-                # Each thread gets its own form automation instance
-                thread_automation = GoogleFormAutomation(self.form_url, self.form_automation.request_config)
-                thread_automation.set_headless_mode(self.headless_mode)
-                thread_automation.field_types = self.form_automation.field_types
-                thread_automation.entry_fields = self.form_automation.entry_fields
-                success = thread_automation.submit_form(form_data)
-            else:
-                # Use main instance for single-threaded
-                success = self.form_automation.submit_form(form_data)
+            thread_automation = GoogleFormAutomation(self.form_url, self.form_automation.request_config)
+            thread_automation.set_headless_mode(self.headless_mode)
+            thread_automation.field_types = self.form_automation.field_types
+            thread_automation.entry_fields = self.form_automation.entry_fields
+            success = thread_automation.submit_form(form_data)
             
-            # Update stats (thread-safe)
             self._update_stats(success, row_id)
-            
             return success
         except Exception as e:
             logger.error(f"Job processing error for Row {job_data.get('row_id', '?')}: {e}")
             self._update_stats(False, job_data.get('row_id', '?'))
             return False
-    
+
     def _update_stats(self, success: bool, row_id):
-        """Thread-safe stats update"""
-        if self._stats_lock:
-            with self._stats_lock:
-                self.stats['processed'] += 1
-                if success:
-                    self.stats['succeeded'] += 1
-                    logger.info(f"✅ Row {row_id} completed successfully")
-                else:
-                    self.stats['failed'] += 1
-                    logger.error(f"❌ Row {row_id} failed")
-        else:
-            # Single-threaded, no lock needed
+        with self._stats_lock:
             self.stats['processed'] += 1
             if success:
                 self.stats['succeeded'] += 1
@@ -107,129 +95,83 @@ class GoogleFormsAutomationSystem:
             else:
                 self.stats['failed'] += 1
                 logger.error(f"❌ Row {row_id} failed")
-    
+
     def run_batch_mode(self, csv_path: str):
         """Run in batch mode"""
         logger.info("📦 Running in BATCH mode...")
-        
-        # Load CSV with form URL for entry order
         reader = CSVDataReader(csv_path, self.form_url)
-        if not reader.load_data():
-            return
-        
-        # Re-initialize with CSV headers
-        if not self.initialize(reader.headers):
-            logger.error("Re-initialization with CSV headers failed")
-            return
-        
+        if not reader.load_data(): return
+        if not self.initialize(reader.headers): return
         jobs = reader.get_job_list(self.scheduler.timezone.zone)
         logger.info(f"📋 Processing {len(jobs)} jobs")
-        
-        # Process jobs with threading support
+
         if self.max_threads > 1 and len(jobs) > 1:
             logger.info(f"🧵 Using {self.max_threads} concurrent threads")
             self._process_jobs_threaded(jobs)
         else:
-            # Single-threaded processing
-            for job in jobs:
-                self.process_job(job)
-        
+            for job in jobs: self.process_job(job)
         self.print_stats()
-    
+
     def _process_jobs_threaded(self, jobs):
         """Process jobs using ThreadPoolExecutor"""
         with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
-            # Submit all jobs
             future_to_job = {executor.submit(self.process_job, job): job for job in jobs}
-            
-            # Process completed jobs
             for future in as_completed(future_to_job):
                 job = future_to_job[future]
-                try:
-                    success = future.result()
-                except Exception as exc:
-                    logger.error(f"Thread execution error for job {job.get('row_id', '?')}: {exc}")
-                    
-                # Small delay to prevent overwhelming the form server
+                try: future.result()
+                except Exception as exc: logger.error(f"Thread execution error for job {job.get('row_id', '?')}: {exc}")
                 time.sleep(0.5)
-    
+
     def run_scheduled_mode(self, csv_path: str):
         """Run in scheduled mode"""
         logger.info("⏰ Running in SCHEDULED mode...")
-        
-        # Load CSV with form URL for entry order
         reader = CSVDataReader(csv_path, self.form_url)
-        if not reader.load_data():
-            return
-        
-        # Re-initialize with CSV headers
-        if not self.initialize(reader.headers):
-            logger.error("Re-initialization with CSV headers failed")
-            return
-        
+        if not reader.load_data(): return
+        if not self.initialize(reader.headers): return
         jobs = reader.get_job_list(self.scheduler.timezone.zone)
         logger.info(f"📋 Scheduling {len(jobs)} jobs")
-        
-        # Clear any existing jobs from queue first
         logger.info("🧹 Clearing existing jobs from queue...")
         self.rabbitmq_handler.purge_queue()
-        
-        # Schedule all jobs first
         self.scheduler.schedule_jobs(jobs)
-        
-        # Give time for all jobs to be scheduled properly
-        import time
         logger.info("⏳ Waiting for all jobs to be scheduled...")
-        time.sleep(1)  # Allow all immediate jobs (0.1s delay) to reach queue
-        
-        # Start worker after all scheduling is complete
+        time.sleep(1)
         logger.info("🔄 Starting worker to process scheduled jobs...")
         self.run_worker_mode()
-
-    def _selenium_worker(self):
-        """Worker thread for processing jobs from the in-memory queue."""
-        while True:
-            try:
-                job_data = self.job_queue.get()
-                if job_data is None:  # Sentinel value to stop the thread
-                    break
-                self.process_job(job_data)
-                self.job_queue.task_done()
-            except Exception as e:
-                logger.error(f"Error in Selenium worker thread: {e}")
 
     def run_worker_mode(self):
         """Run in worker mode"""
         logger.info("👷 Running in WORKER mode...")
 
-        # Start Selenium worker threads
+        # 1. Mulai thread-thread worker Selenium
         selenium_workers = []
-        for _ in range(self.max_threads):
-            worker = threading.Thread(target=self._selenium_worker, daemon=True)
-            worker.start()
-            selenium_workers.append(worker)
+        for i in range(self.max_threads):
+            worker_thread = threading.Thread(target=self._selenium_worker, daemon=True)
+            worker_thread.start()
+            selenium_workers.append(worker_thread)
         logger.info(f"🚀 Started {self.max_threads} Selenium worker threads.")
 
-        # RabbitMQ callback to add jobs to the in-memory queue
+        # 2. Definisikan callback yang CEPAT untuk RabbitMQ
         def rabbitmq_callback(ch, method, properties, body):
+            """Callback ini hanya mengambil pesan dan meletakkannya di antrian internal."""
             try:
                 job_data = json.loads(body)
                 self.job_queue.put(job_data)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
+                logger.debug(f"Job {job_data.get('row_id')} received and queued internally.")
             except Exception as e:
-                logger.error(f"Error processing message from RabbitMQ: {e}")
+                logger.error(f"Error queuing job from RabbitMQ: {e}")
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
         
-        logger.info("Waiting for jobs from queue...")
+        # 3. Mulai consumer RabbitMQ, yang akan tetap responsif
+        logger.info("...Waiting for jobs from RabbitMQ queue...")
         self.rabbitmq_handler.start_worker(rabbitmq_callback)
-    
+
     def print_stats(self):
         """Print processing statistics"""
         logger.info("📊 Processing Statistics:")
         logger.info(f"   Processed: {self.stats['processed']}")
         logger.info(f"   Succeeded: {self.stats['succeeded']}")
         logger.info(f"   Failed: {self.stats['failed']}")
-        
         if self.stats['processed'] > 0:
             success_rate = (self.stats['succeeded'] / self.stats['processed']) * 100
             logger.info(f"   Success Rate: {success_rate:.1f}%")
