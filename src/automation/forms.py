@@ -86,11 +86,20 @@ class GoogleFormAutomation:
 
     def setup_driver(self, headless: bool = True) -> webdriver.Chrome:
         """Setup Chrome driver with optimized options for Linux server environment"""
+        import tempfile
+        import uuid
+        import os
+
         chrome_options = Options()
 
-        # Core headless and sandbox options
-        if headless:
-            chrome_options.add_argument("--headless")
+        # Create unique user data directory to avoid conflicts
+        temp_dir = tempfile.gettempdir()
+        unique_id = str(uuid.uuid4())[:8]
+        user_data_dir = os.path.join(temp_dir, f"chrome_user_data_{unique_id}")
+        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+
+        # Core headless and sandbox options 
+        chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
@@ -120,15 +129,19 @@ class GoogleFormAutomation:
         chrome_options.add_argument("--memory-pressure-off")
         chrome_options.add_argument("--max_old_space_size=4096")
 
-        # Fix for the cache warning you're seeing
+        # Fix for concurrent sessions and cleanup issues
         chrome_options.add_argument("--disable-background-networking")
         chrome_options.add_argument("--disable-default-apps")
         chrome_options.add_argument("--disable-sync")
         chrome_options.add_argument("--metrics-recording-only")
         chrome_options.add_argument("--no-first-run")
         chrome_options.add_argument("--disable-gpu-sandbox")
+        chrome_options.add_argument("--remote-debugging-port=0")  # Use random port
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--disable-features=TranslateUI")
+        chrome_options.add_argument("--disable-ipc-flooding-protection")
 
-        # Additional Chrome flags to prevent warnings
+        # Additional Chrome flags to prevent warnings and conflicts
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option("useAutomationExtension", False)
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
@@ -167,8 +180,12 @@ class GoogleFormAutomation:
             )
 
             logger.info(
-                f"✅ Chrome driver initialized successfully (headless: {headless})"
+                f"✅ Chrome driver initialized successfully (headless: {headless}, user_data: {user_data_dir})"
             )
+
+            # Store user_data_dir for cleanup later if needed
+            driver.user_data_dir = user_data_dir
+
             return driver
 
         except Exception as e:
@@ -176,6 +193,17 @@ class GoogleFormAutomation:
             logger.info(
                 "💡 Make sure chromedriver is in your PATH or specify the full path"
             )
+
+            # Clean up the temp directory if driver creation failed
+            try:
+                import shutil
+
+                if os.path.exists(user_data_dir):
+                    shutil.rmtree(user_data_dir, ignore_errors=True)
+                    logger.debug(f"🧹 Cleaned up temp directory: {user_data_dir}")
+            except Exception as cleanup_error:
+                logger.debug(f"Failed to cleanup temp directory: {cleanup_error}")
+
             raise
 
     def fill_field_if_present(self, driver, entry_name: str, value: str) -> bool:
