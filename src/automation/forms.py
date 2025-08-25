@@ -637,7 +637,7 @@ class GoogleFormAutomation:
                     button_text = next_button.text.strip()
                     logger.info(f"  ➡️  Found 'Berikutnya' button: '{button_text}'")
 
-                    if "berikutnya" in button_text.lower():
+                    if self.is_next_button(button_text):
                         driver.execute_script(
                             "arguments[0].scrollIntoView();", next_button
                         )
@@ -745,3 +745,14 @@ class GoogleFormAutomation:
         finally:
             # Enhanced cleanup
             self.cleanup_driver(driver)
+
+    def is_next_button(self, button_text: str) -> bool:
+        """Check if button text indicates a next/continue button"""
+        text = button_text.lower().strip()
+        next_keywords = ["berikutnya", "next", "continue", "lanjut"]
+        back_keywords = ["kembali", "back", "previous"]
+        
+        has_next = any(keyword in text for keyword in next_keywords)
+        has_back = any(keyword in text for keyword in back_keywords)
+        
+        return has_next and not has_back
