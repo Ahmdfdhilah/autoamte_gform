@@ -1,8 +1,8 @@
 """
-Endpoints untuk Google Forms processing
+Endpoints untuk Google Forms processing dengan API Key protection
 """
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Depends
+from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Depends, Header
 from fastapi.responses import JSONResponse
 import tempfile
 import os
@@ -23,10 +23,21 @@ from ..services import DynamicFormAnalyzer
 from ..services.job_tracker import job_tracker, JobStatus
 from ..services.background_processor import background_processor
 from ...core.system import GoogleFormsAutomationSystem
-from ...core.config import REQUEST_CONFIG, AUTOMATION_CONFIG, RABBITMQ_CONFIG
+from ...core.config import REQUEST_CONFIG, AUTOMATION_CONFIG, RABBITMQ_CONFIG, API_KEY
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/forms", tags=["Google Forms"])
+
+def verify_api_key(x_api_key: Optional[str] = Header(None)):
+    """
+    Dependency untuk verifikasi API key pada endpoint yang dilindungi
+    """
+    if x_api_key != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API key. Include 'X-API-Key: tanyafadil' in headers."
+        )
+    return x_api_key
 
 # Initialize form analyzer
 form_analyzer = DynamicFormAnalyzer()
@@ -36,11 +47,14 @@ async def process_google_form_background(
     form_url: str = Form(..., description="URL Google Form yang akan diproses"),
     file: UploadFile = File(..., description="File CSV atau Excel yang berisi data"),
     headless: bool = Form(True, description="Jalankan browser dalam mode headless"),
-    threads: int = Form(1, description="Jumlah thread concurrent (1-5)")
+    threads: int = Form(1, description="Jumlah thread concurrent (1-5)"),
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Process Google Form dengan background processing
     Returns job ID immediately, use /jobs/{job_id} to check status
+    
+    **Requires API Key**: Include `X-API-Key: tanyafadil` in headers
     """
     
     try:
@@ -143,10 +157,13 @@ async def process_google_form_sync(
     form_url: str = Form(..., description="URL Google Form yang akan diproses"),
     file: UploadFile = File(..., description="File CSV atau Excel yang berisi data"),
     headless: bool = Form(True, description="Jalankan browser dalam mode headless"),
-    threads: int = Form(1, description="Jumlah thread concurrent (1-5)")
+    threads: int = Form(1, description="Jumlah thread concurrent (1-5)"),
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Process Google Form dengan data dari CSV/Excel
+    
+    **Requires API Key**: Include `X-API-Key: tanyafadil` in headers
     
     Args:
         form_url: URL Google Form yang akan diisi
@@ -274,9 +291,14 @@ async def process_google_form_sync(
         )
 
 @router.post("/analyze/", response_model=FormAnalysisResponse)
-async def analyze_form(request: FormAnalysisRequest):
+async def analyze_form(
+    request: FormAnalysisRequest,
+    api_key: str = Depends(verify_api_key)
+):
     """
     Analisis struktur Google Form
+    
+    **Requires API Key**: Include `X-API-Key: tanyafadil` in headers
     
     Args:
         request: Form analysis request dengan URL
@@ -316,9 +338,14 @@ async def analyze_form(request: FormAnalysisRequest):
         )
 
 @router.post("/map-fields/", response_model=FieldMappingResponse)
-async def map_csv_fields(request: FieldMappingRequest):
+async def map_csv_fields(
+    request: FieldMappingRequest,
+    api_key: str = Depends(verify_api_key)
+):
     """
     Mapping CSV headers dengan form fields
+    
+    **Requires API Key**: Include `X-API-Key: tanyafadil` in headers
     
     Args:
         request: Field mapping request dengan URL dan CSV headers
@@ -364,6 +391,8 @@ async def get_job_status(job_id: str):
     """
     Get job status and progress
     
+    **No API Key Required** - Read-only endpoint
+    
     Args:
         job_id: Job ID dari response /process/
     
@@ -398,6 +427,8 @@ async def list_all_jobs():
     """
     List semua jobs
     
+    **No API Key Required** - Read-only endpoint
+    
     Returns:
         List semua jobs dengan status masing-masing
     """
@@ -418,9 +449,14 @@ async def list_all_jobs():
         )
 
 @router.delete("/jobs/{job_id}")
-async def cancel_job(job_id: str):
+async def cancel_job(
+    job_id: str,
+    api_key: str = Depends(verify_api_key)
+):
     """
     Cancel/delete job
+    
+    **Requires API Key**: Include `X-API-Key: tanyafadil` in headers
     
     Args:
         job_id: Job ID untuk di-cancel
@@ -468,6 +504,8 @@ async def cancel_job(job_id: str):
 async def get_automation_config():
     """
     Get current automation configuration
+    
+    **No API Key Required** - Read-only endpoint
     
     Returns:
         Current AUTOMATION_CONFIG settings

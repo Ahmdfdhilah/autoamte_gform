@@ -3,8 +3,13 @@ Configuration file untuk Google Forms Automation
 Semua setting global ada di sini
 """
 
+import os
+
 # ===== FORM CONFIGURATION =====
 FORM_URL = ''
+
+# ===== API SECURITY CONFIGURATION =====
+API_KEY = os.getenv('FORMS_API_KEY', 'string')  # Default fallback ke 'tanyafadil'
 
 #===== JOB MAPPING CONFIGURATION =====
 try:

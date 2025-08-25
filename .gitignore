@@ -23,4 +23,6 @@ __pycache__/
 *.so
 .pytest_cache/
 
+.env
+env
 ~$test1.xlsx
