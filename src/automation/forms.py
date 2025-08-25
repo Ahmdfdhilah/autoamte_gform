@@ -111,20 +111,22 @@ class GoogleFormAutomation:
         # Use process ID and a unique ID for better collision avoidance
         pid = os.getpid()
         unique_id = str(uuid.uuid4())
-        
+
         # Check for a dedicated temp directory from an environment variable first
         # This is the best practice for a server environment
-        temp_base = os.getenv('CHROME_TEMP_DIR', tempfile.gettempdir())
-        
+        temp_base = os.getenv("CHROME_TEMP_DIR", tempfile.gettempdir())
+
         user_data_dir = os.path.join(temp_base, f"chrome_user_{pid}_{unique_id}")
-        
+
         try:
-            os.makedirs(user_data_dir, exist_ok=True) # Use exist_ok=True to be safe
+            os.makedirs(user_data_dir, exist_ok=True)  # Use exist_ok=True to be safe
             self.temp_dirs.append(user_data_dir)
             logger.debug(f"✅ Successfully created unique temp dir: {user_data_dir}")
             return user_data_dir
         except Exception as e:
-            logger.error(f"❌ CRITICAL: Failed to create temp directory at {user_data_dir}: {e}")
+            logger.error(
+                f"❌ CRITICAL: Failed to create temp directory at {user_data_dir}: {e}"
+            )
             # If we can't create a temp directory, we should not proceed with user-data-dir
             return None
 
@@ -139,15 +141,19 @@ class GoogleFormAutomation:
                 chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
                 logger.debug(f"📁 Using unique temp dir: {user_data_dir}")
             else:
-                logger.warning("⚠️ Could not create a unique temp directory. Proceeding without --user-data-dir.")
-                # This might still cause issues, but it's better than crashing.
+                logger.warning(
+                    "⚠️ Could not create a unique temp directory. Proceeding without --user-data-dir."
+                )
         except Exception as e:
-            logger.warning(f"Failed to create temp dir: {e}, proceeding without --user-data-dir")
-            # Don't use user-data-dir if we can't create a unique one
+            logger.warning(
+                f"Failed to create temp dir: {e}, proceeding without --user-data-dir"
+            )
 
-        # Core headless and sandbox options 
+        # Core headless and sandbox options
         if headless:
-            chrome_options.add_argument("--headless")
+            chrome_options.add_argument(
+                "--headless=new"
+            )  # Gunakan mode headless baru yang lebih stabil
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
@@ -184,12 +190,13 @@ class GoogleFormAutomation:
         chrome_options.add_argument("--metrics-recording-only")
         chrome_options.add_argument("--no-first-run")
         chrome_options.add_argument("--disable-gpu-sandbox")
-        
+
         # Use random port to avoid conflicts between concurrent instances
         import random
+
         debug_port = random.randint(9222, 9922)
         chrome_options.add_argument(f"--remote-debugging-port={debug_port}")
-        
+
         chrome_options.add_argument("--disable-web-security")
         chrome_options.add_argument("--disable-features=TranslateUI")
         chrome_options.add_argument("--disable-ipc-flooding-protection")
@@ -206,9 +213,8 @@ class GoogleFormAutomation:
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
         # Logging options to reduce console noise
-        chrome_options.add_argument("--log-level=3")  # Suppress INFO, WARNING, ERROR
+        chrome_options.add_argument("--log-level=3")
         chrome_options.add_experimental_option("excludeSwitches", ["enable-logging"])
-        chrome_options.add_experimental_option("useAutomationExtension", False)
 
         # Prefs to disable various Chrome features that might cause warnings
         prefs = {
@@ -217,47 +223,40 @@ class GoogleFormAutomation:
                 "geolocation": 2,
             },
             "profile.default_content_settings.popups": 0,
-            "profile.managed_default_content_settings.images": 2,  # Block images for faster loading
+            "profile.managed_default_content_settings.images": 2,
             "profile.content_settings.exceptions.automatic_downloads.*.setting": 1,
         }
         chrome_options.add_experimental_option("prefs", prefs)
 
-        # Service configuration for better process management
-        service = Service(executable_path="/usr/bin/chromedriver")
-        service.start_error_message = "Failed to start Chrome service"
+        # Service configuration
+        # Hapus executable_path agar Selenium mencarinya secara otomatis
+        service = Service()
 
         try:
             driver = webdriver.Chrome(service=service, options=chrome_options)
-
-            # Execute script to hide automation indicators
             driver.execute_script(
                 "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
             )
-
             headless_msg = "headless" if headless else "visible"
-            logger.info(f"✅ Chrome driver initialized successfully ({headless_msg}, port: {debug_port})")
-
+            logger.info(
+                f"✅ Chrome driver initialized successfully ({headless_msg}, port: {debug_port})"
+            )
             return driver
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize Chrome driver: {e}")
-            
-            # Enhanced error reporting
             if "user data directory is already in use" in str(e):
-                logger.error("💡 Concurrency issue detected. This usually happens when:")
-                logger.error("   - Multiple instances are running simultaneously")
-                logger.error("   - Previous Chrome processes didn't exit cleanly")
-                logger.error("   - Temp directory permissions issue")
-                
-                # Try to kill any orphaned Chrome processes
+                logger.error("💡 Concurrency issue detected.")
                 try:
                     import subprocess
+
                     subprocess.run(["pkill", "-f", "chrome"], capture_output=True)
                     logger.info("🔄 Attempted to kill orphaned Chrome processes")
                 except:
                     pass
-                
-            logger.info("💡 Make sure chromedriver is in your PATH or specify the full path")
+            logger.info(
+                "💡 Make sure chromedriver is in your PATH or specify the full path"
+            )
             raise
 
     def cleanup_driver(self, driver):
@@ -268,7 +267,7 @@ class GoogleFormAutomation:
                 logger.debug("🚪 Browser closed")
             except Exception as e:
                 logger.debug(f"Error closing browser: {e}")
-        
+
         # Clean up temp directories immediately
         self._cleanup_temp_dirs()
         self.temp_dirs.clear()
@@ -732,12 +731,14 @@ class GoogleFormAutomation:
 
         except Exception as e:
             logger.error(f"❌ Selenium submission error: {e}")
-            
+
             # Enhanced error handling for common concurrency issues
             if "session not created" in str(e):
-                logger.error("🔧 Session creation failed - this might be a concurrency issue")
+                logger.error(
+                    "🔧 Session creation failed - this might be a concurrency issue"
+                )
                 logger.error("💡 Try running instances with a delay between them")
-            
+
             return False
 
         finally:
